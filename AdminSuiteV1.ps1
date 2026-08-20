@@ -1,11 +1,11 @@
 <#
 ================================================================================
- ACTIVE DIRECTORY & ENTRA ID ADMIN SUITE (VOLLSTÄNDIGE GESAMTEDITION - LETZTSTAND)
- Module: Tools 1 bis 11 (Vollumfänglich integriert) | DE & EN | Native LDAP & Forms
+ ACTIVE DIRECTORY & ENTRA ID ADMIN SUITE (VOLLSTÄNDIGE GESAMTEDITION)
+ Module: Tools 1 bis 11 | Sprachunterstützung: DE / EN | Native LDAP & Forms
 ================================================================================
- Inklusive aller Werkzeuge & Module:
+ Enthält:
   - 3-Spalten Header: OS & Domäne, Hardware & System, Entra ID Registry / Cloud Status
-  - Tool 1: Multi-DC LastLogon Übersicht (Live DC Query & Inaktivitätsanalyse)
+  - Tool 1: Multi-DC LastLogon Übersicht (Live DC Query, Inaktivitätsanalyse & Sortierung)
   - Tool 2: Quick AD Audit (Deaktivierte Konten, Password never expires, leere Gruppen)
   - Tool 3: Entra ID / Hybrid Join Diagnostic (dsregcmd /status & Tenant Details)
   - Tool 4: Gruppen & GPO Diagnostik (3 Register: User-Gruppen, PC-Gruppen, gpresult)
@@ -14,9 +14,9 @@
   - Tool 7: AD Security & OS Support Audit (Dynamischer OS-Filter, EOL-Matrix & LTSC/Build-Erkennung)
   - Tool 8: Client Software & App Analyse (Registry Win32 & AppX Store Apps mit Sprachen)
   - Tool 9: AD ACL & Berechtigungsvergleich (Universelles Diff für User, Gruppen, Computer, OUs)
-  - Tool 10: Active Directory OU & Gruppen Finder (inkl. adminCount, UPN & Gruppen-Filter)
-  - Tool 11: AD Kennwortrichtlinien & PSO Audit (Bewährte funktionierende ADSI/COM-Engine)
-  - Zentrales UITheme Layout ($script:UITheme & Apply-StandardGridTheme)
+  - Tool 10: Active Directory OU & Gruppen Finder (Wildcard * gibt alle Objekte zurück)
+  - Tool 11: AD Kennwortrichtlinien & Fine-Grained PSO Audit (Bewährte Fassung)
+  - Universeller Spaltenklick-Sortierer in ALLEN Tabellen & DataGridViews
 ================================================================================
 #>
 
@@ -67,13 +67,103 @@ $script:UITheme = @{
 }
 
 # ==============================================================================
+# UNIVERSELLE SPALTEN-SORTIERUNG FÜR ALLE DATAGRIDVIEWS
+# ==============================================================================
+function Enable-GridSorting {
+    param(
+        [Parameter(Mandatory=$true)]
+        [System.Windows.Forms.DataGridView]$Grid,
+        [scriptblock]$OnSortedCallback = $null
+    )
+
+    $sortState = @{
+        LastColumn = ""
+        Ascending  = $true
+    }
+    $Grid.Tag = $sortState
+
+    $Grid.Add_ColumnHeaderMouseClick({
+        param($sender, $e)
+        
+        $targetGrid = $sender
+        if ($e.ColumnIndex -lt 0 -or $e.ColumnIndex -ge $targetGrid.Columns.Count) { return }
+        $col = $targetGrid.Columns[$e.ColumnIndex]
+        if (-not $col) { return }
+
+        $propName = if ($col.DataPropertyName) { $col.DataPropertyName } else { $col.HeaderText }
+        if (-not $propName) { return }
+
+        $state = $targetGrid.Tag
+        if (-not $state -or -not ($state -is [hashtable])) {
+            $state = @{ LastColumn = ""; Ascending = $true }
+            $targetGrid.Tag = $state
+        }
+
+        if ($state.LastColumn -eq $propName) {
+            $state.Ascending = -not $state.Ascending
+        } else {
+            $state.LastColumn = $propName
+            $state.Ascending = $true
+        }
+
+        $items = @($targetGrid.DataSource)
+        if ($null -eq $items -or $items.Count -le 1) { return }
+
+        $isAsc = $state.Ascending
+        $sorted = $items | Sort-Object -Property @{
+            Expression = {
+                $val = $_.$propName
+                if ($null -eq $val -or $val -eq "") { return "" }
+
+                # Zahlen- und Einheiten-Erkennung (Tage, Minuten, GB, Kerne, Versuche etc.)
+                if ($propName -match "(?i)tage|inaktiv|count|anzahl|precedence|priorität|versuche|attempts|alter|age|min|dauer|arbeitsspeicher|kerne") {
+                    if ($val -eq "Nie" -or $val -eq "N/A" -or $val -eq "None" -or $val -eq "-") { 
+                        return $(if ($isAsc) { [double]::MaxValue } else { [double]::MinValue }) 
+                    }
+                    if ($val.ToString() -match '^([0-9]+(\.[0-9]+)?)') {
+                        return [double]$Matches[1]
+                    }
+                }
+
+                # Datums-Erkennung (dd.MM.yyyy HH:mm:ss oder dd.MM.yyyy)
+                if ($val.ToString() -match '^\d{2}\.\d{2}\.\d{4}') {
+                    try {
+                        return [datetime]::ParseExact($val.ToString().Trim(), @("dd.MM.yyyy HH:mm:ss", "dd.MM.yyyy HH:mm", "dd.MM.yyyy"), $null)
+                    } catch { return $val }
+                }
+
+                return $val
+            }
+            Descending = (-not $isAsc)
+        }
+
+        $newArr = [System.Collections.ArrayList]::new()
+        foreach ($it in $sorted) { [void]$newArr.Add($it) }
+
+        $targetGrid.DataSource = $null
+        $targetGrid.DataSource = $newArr
+
+        foreach ($c in $targetGrid.Columns) {
+            $c.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
+        }
+        $targetGrid.Columns[$e.ColumnIndex].HeaderCell.SortGlyphDirection = `
+            $(if ($isAsc) { [System.Windows.Forms.SortOrder]::Ascending } else { [System.Windows.Forms.SortOrder]::Descending })
+
+        if ($OnSortedCallback) {
+            & $OnSortedCallback $targetGrid
+        }
+    })
+}
+
+# ==============================================================================
 # HILFSFUNKTION: GLOBALER GRID-LAYOUT-STYLING-APPLIKATOR
 # ==============================================================================
 function Apply-StandardGridTheme {
     param(
         [Parameter(Mandatory=$true)]
         [System.Windows.Forms.DataGridView]$Grid,
-        [switch]$EnableAlternatingRowColor
+        [switch]$EnableAlternatingRowColor,
+        [switch]$DisableAutoSort
     )
 
     $theme = $script:UITheme
@@ -119,6 +209,11 @@ function Apply-StandardGridTheme {
         $Grid.AlternatingRowsDefaultCellStyle.BackColor          = $theme.RowAltBackColor
         $Grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = $theme.SelectionBackColor
         $Grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = $theme.SelectionForeColor
+    }
+
+    # Automatische Spaltensortierung für jedes DataGridView aktivieren
+    if (-not $DisableAutoSort) {
+        Enable-GridSorting -Grid $Grid
     }
 }
 
@@ -697,18 +792,19 @@ function Open-ToolLastLogon {
     $grpDCs.SendToBack()
     $pnlTop.SendToBack()
 
-    $applyRowColors = {
-        $ninetyDaysAgo = (Get-Date).AddDays(-90)
-        foreach ($row in $gridResults.Rows) {
+    # Dynamische Farbgebung über RowPrePaint (funktioniert auch nach jeder Sortierung)
+    $gridResults.Add_RowPrePaint({
+        param($sender, $e)
+        if ($e.RowIndex -ge 0 -and $e.RowIndex -lt $gridResults.Rows.Count) {
+            $row = $gridResults.Rows[$e.RowIndex]
             $latestVal = $row.Cells["NeuesterLogin"].Value
+            $ninetyDaysAgo = (Get-Date).AddDays(-90)
             $isWithin90Days = $false
 
             if ($latestVal -and $latestVal -ne "Nie") {
                 try {
                     $parsedDate = [datetime]::ParseExact($latestVal, "dd.MM.yyyy HH:mm:ss", $null)
-                    if ($parsedDate -ge $ninetyDaysAgo) {
-                        $isWithin90Days = $true
-                    }
+                    if ($parsedDate -ge $ninetyDaysAgo) { $isWithin90Days = $true }
                 } catch {}
             }
 
@@ -726,61 +822,6 @@ function Open-ToolLastLogon {
                 $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Black
             }
         }
-    }
-
-    $script:sortCol = ""
-    $script:sortAsc = $true
-
-    $gridResults.Add_ColumnHeaderMouseClick({
-        param($sender, $e)
-
-        $col = $gridResults.Columns[$e.ColumnIndex]
-        $propName = if ($col.DataPropertyName) { $col.DataPropertyName } else { $col.HeaderText }
-
-        if ($script:sortCol -eq $propName) {
-            $script:sortAsc = -not $script:sortAsc
-        } else {
-            $script:sortCol = $propName
-            $script:sortAsc = $true
-        }
-
-        $items = @($gridResults.DataSource)
-        if ($null -eq $items -or $items.Count -le 1) { return }
-
-        $sorted = $items | Sort-Object -Property @{
-            Expression = {
-                $val = $_.$propName
-                if ($null -eq $val -or $val -eq "") { return "" }
-
-                if ($propName -like "*Tage*" -or $propName -like "*Inaktiv*") {
-                    if ($val -eq "Nie" -or $val -eq "N/A") { return [int]::MaxValue }
-                    if ($val -as [int]) { return [int]$val }
-                }
-
-                if ($val -match '^\d{2}\.\d{2}\.\d{4}') {
-                    try {
-                        return [datetime]::ParseExact($val.ToString().Trim(), @("dd.MM.yyyy HH:mm:ss", "dd.MM.yyyy"), $null)
-                    } catch { return $val }
-                }
-
-                return $val
-            }
-            Descending = (-not $script:sortAsc)
-        }
-
-        $newArr = [System.Collections.ArrayList]::new()
-        foreach ($it in $sorted) { [void]$newArr.Add($it) }
-
-        $gridResults.DataSource = $null
-        $gridResults.DataSource = $newArr
-
-        foreach ($c in $gridResults.Columns) {
-            $c.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
-        }
-        $gridResults.Columns[$e.ColumnIndex].HeaderCell.SortGlyphDirection = `
-            $(if ($script:sortAsc) { [System.Windows.Forms.SortOrder]::Ascending } else { [System.Windows.Forms.SortOrder]::Descending })
-
-        & $applyRowColors
     })
 
     $subForm.Add_Shown({
@@ -943,13 +984,11 @@ function Open-ToolLastLogon {
         $gridResults.DataSource = $null
         $gridResults.DataSource = $arr
 
-        & $applyRowColors
-
         $lblStatus.Text = "Ergebnis: $($sortedResults.Count) Computer gefunden (🟢 Aktiv: $countActive90 | 🔴 Inaktiv (>90d): $countInactive90 | ⚪ Deaktiviert: $countDisabled)."
     })
 
     [void]$subForm.ShowDialog()
-}        
+}
 
 # ==============================================================================
 # TOOL 2: QUICK AD AUDIT & ABFRAGEN
@@ -1572,6 +1611,22 @@ function Open-ToolOSSupportAudit {
     Apply-StandardGridTheme -Grid $gridOSAudit
     $subForm.Controls.Add($gridOSAudit); $gridOSAudit.BringToFront()
 
+    # Farbgebung über RowPrePaint
+    $gridOSAudit.Add_RowPrePaint({
+        param($sender, $e)
+        if ($e.RowIndex -ge 0 -and $e.RowIndex -lt $gridOSAudit.Rows.Count) {
+            $row = $gridOSAudit.Rows[$e.RowIndex]
+            $stVal = $row.Cells["Support Status"].Value
+            if ($stVal -like "*Out of Support*") {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 235)
+            } elseif ($stVal -eq "Near EOL") {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 248, 220)
+            } elseif ($stVal -like "*Supported*") {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(240, 255, 240)
+            }
+        }
+    })
+
     $subForm.Add_Shown({
         $lblAuditStatus.Text = "Lade AD Computerkonten..."
         $subForm.Refresh()
@@ -1665,17 +1720,6 @@ function Open-ToolOSSupportAudit {
 
         $gridOSAudit.DataSource = $null
         $gridOSAudit.DataSource = $arrA
-
-        foreach ($row in $gridOSAudit.Rows) {
-            $stVal = $row.Cells["Support Status"].Value
-            if ($stVal -like "*Out of Support*") {
-                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 235)
-            } elseif ($stVal -eq "Near EOL") {
-                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 248, 220)
-            } elseif ($stVal -like "*Supported*") {
-                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(240, 255, 240)
-            }
-        }
 
         $lblAuditStatus.Text = "Ergebnis: $($arrA.Count) Computer gefunden (aus $($script:RawComputersList.Count) AD-Konten)."
     })
@@ -1935,6 +1979,21 @@ function Show-Tool9-ACLCompare {
 
     $global:ComparisonResults = @()
 
+    $gridACL.Add_RowPrePaint({
+        param($sender, $e)
+        if ($e.RowIndex -ge 0 -and $e.RowIndex -lt $gridACL.Rows.Count) {
+            $row = $gridACL.Rows[$e.RowIndex]
+            $statusVal = $row.Cells["Vergleichs-Status"].Value
+            if ($statusVal -eq "Nur auf Objekt 1") {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 235)
+            } elseif ($statusVal -eq "Nur auf Objekt 2") {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(235, 245, 255)
+            } elseif ($statusVal -like "*Abweichend*") {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 248, 220)
+            }
+        }
+    })
+
     function Get-UniversalADObjectACL {
         param([string]$Identifier, [string]$TypeSelection)
         $target = $null
@@ -2014,17 +2073,6 @@ function Show-Tool9-ACLCompare {
         if ($gridACL.Columns["Typ"])                { $gridACL.Columns["Typ"].FillWeight                = 70 }
         if ($gridACL.Columns["Objekt 1 Vererbt"])   { $gridACL.Columns["Objekt 1 Vererbt"].FillWeight   = 85 }
         if ($gridACL.Columns["Objekt 2 Vererbt"])   { $gridACL.Columns["Objekt 2 Vererbt"].FillWeight   = 85 }
-
-        foreach ($row in $gridACL.Rows) {
-            $statusVal = $row.Cells["Vergleichs-Status"].Value
-            if ($statusVal -eq "Nur auf Objekt 1") {
-                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 235)
-            } elseif ($statusVal -eq "Nur auf Objekt 2") {
-                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(235, 245, 255)
-            } elseif ($statusVal -like "*Abweichend*") {
-                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 248, 220)
-            }
-        }
     }
 
     $btnCompare.Add_Click({
@@ -2336,11 +2384,16 @@ function Show-Tool10-OUGroupFinder {
         $LblGroups.Text = "Gruppenmitgliedschaften:"
         
         if ([string]::IsNullOrWhiteSpace($SearchTerm)) {
-            [System.Windows.Forms.MessageBox]::Show("Bitte geben Sie einen Suchbegriff ein.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
-            return
+            $SearchTerm = "*"
         }
 
-        $FilterPattern = if ($SearchTerm -notlike "*\**") { "*$SearchTerm*" } else { $SearchTerm }
+        $FilterPattern = if ($SearchTerm -eq "*" -or $SearchTerm -eq "") {
+            "*"
+        } elseif ($SearchTerm -notlike "*\**") {
+            "*$SearchTerm*"
+        } else {
+            $SearchTerm
+        }
 
         $LblStatus.Text = "Suche läuft..."
         $LblStatus.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
@@ -2351,7 +2404,12 @@ function Show-Tool10-OUGroupFinder {
         try {
             switch ($CmbType.SelectedIndex) {
                 0 { # Clients (ohne Server)
-                    $raw = Search-NativeLdap -LdapFilter "(&(objectCategory=computer)(name=$FilterPattern)(!(operatingSystem=*Server*)))" -PropertiesToLoad @("name","distinguishedName","userAccountControl","operatingSystem","adminCount","userPrincipalName")
+                    $ldapFilter = if ($FilterPattern -eq "*") {
+                        "(&(objectCategory=computer)(!(operatingSystem=*Server*)))"
+                    } else {
+                        "(&(objectCategory=computer)(name=$FilterPattern)(!(operatingSystem=*Server*)))"
+                    }
+                    $raw = Search-NativeLdap -LdapFilter $ldapFilter -PropertiesToLoad @("name","distinguishedName","userAccountControl","operatingSystem","adminCount","userPrincipalName")
                     foreach ($Item in $raw) {
                         $p = $Item.Properties
                         $dn = [string]$p["distinguishedname"][0]
@@ -2375,7 +2433,12 @@ function Show-Tool10-OUGroupFinder {
                     }
                 }
                 1 { # Server
-                    $raw = Search-NativeLdap -LdapFilter "(&(objectCategory=computer)(name=$FilterPattern)(operatingSystem=*Server*))" -PropertiesToLoad @("name","distinguishedName","userAccountControl","operatingSystem","adminCount","userPrincipalName")
+                    $ldapFilter = if ($FilterPattern -eq "*") {
+                        "(&(objectCategory=computer)(operatingSystem=*Server*))"
+                    } else {
+                        "(&(objectCategory=computer)(name=$FilterPattern)(operatingSystem=*Server*))"
+                    }
+                    $raw = Search-NativeLdap -LdapFilter $ldapFilter -PropertiesToLoad @("name","distinguishedName","userAccountControl","operatingSystem","adminCount","userPrincipalName")
                     foreach ($Item in $raw) {
                         $p = $Item.Properties
                         $dn = [string]$p["distinguishedname"][0]
@@ -2399,7 +2462,12 @@ function Show-Tool10-OUGroupFinder {
                     }
                 }
                 2 { # User
-                    $raw = Search-NativeLdap -LdapFilter "(&(objectCategory=person)(objectClass=user)(|(sAMAccountName=$FilterPattern)(displayName=$FilterPattern)(userPrincipalName=$FilterPattern)))" -PropertiesToLoad @("sAMAccountName","displayName","distinguishedName","userAccountControl","adminCount","userPrincipalName","mail","department")
+                    $ldapFilter = if ($FilterPattern -eq "*") {
+                        "(&(objectCategory=person)(objectClass=user))"
+                    } else {
+                        "(&(objectCategory=person)(objectClass=user)(|(sAMAccountName=$FilterPattern)(displayName=$FilterPattern)(userPrincipalName=$FilterPattern)))"
+                    }
+                    $raw = Search-NativeLdap -LdapFilter $ldapFilter -PropertiesToLoad @("sAMAccountName","displayName","distinguishedName","userAccountControl","adminCount","userPrincipalName","mail","department")
                     foreach ($Item in $raw) {
                         $p = $Item.Properties
                         $dn = [string]$p["distinguishedname"][0]
@@ -2494,7 +2562,7 @@ function Show-Tool10-OUGroupFinder {
 }
 
 # ==============================================================================
-# TOOL 11: AD PASSWORD POLICIES & FINE-GRAINED PSO AUDIT (ORIGINAL FUNKTIONIERENDE VERSION)
+# TOOL 11: AD PASSWORD POLICIES & FINE-GRAINED PSO AUDIT (BEWÄHRTE FASSUNG)
 # ==============================================================================
 function Show-Tool11-PasswordPolicyAudit {
     if (-not (Assert-DomainJoined)) { return }
@@ -2957,7 +3025,7 @@ function Show-Tool11-PasswordPolicyAudit {
                 }
             }
             $exportData | Export-Csv -Path $sfd.FileName -NoTypeInformation -Delimiter ";" -Encoding UTF8
-            [System.Windows.Forms.MessageBox]::Show("Kennwortrichtlinien exportiert:`n$($sfd.FileName)", "Export OK", "OK", "Information")
+            [System.Windows.Forms.MessageBox]::Show("Kennwortrichtlinien exportiert:`n$($sfd.FileName)", "Export OK", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
     })
 
