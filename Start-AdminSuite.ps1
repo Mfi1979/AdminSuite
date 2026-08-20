@@ -1,4 +1,4 @@
-﻿<#
+<#
 ================================================================================
  ACTIVE DIRECTORY & ENTRA ID ADMIN SUITE - HYBRID BOOTSTRAPPER
  Startet die Suite lokal aus dem Ordner ODER live per One-Liner aus GitHub:

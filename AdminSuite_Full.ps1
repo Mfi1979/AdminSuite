@@ -1,4 +1,4 @@
-﻿<#
+<#
 ================================================================================
  ACTIVE DIRECTORY & ENTRA ID ADMIN SUITE (VOLLSTÄNDIGE GESAMTEDITION)
  Module: Tools 1 bis 11 | Sprachunterstützung: DE / EN | Native LDAP & Forms
