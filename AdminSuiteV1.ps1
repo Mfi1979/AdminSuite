@@ -62,7 +62,7 @@ $script:UITheme = @{
 
     # --- Standard-Fensterabmessungen ---
     DefaultToolWidth      = 1200
-    DefaultToolHeight     = 780
+    DefaultToolHeight     = 800
     HeaderPanelHeight     = 60
 }
 
