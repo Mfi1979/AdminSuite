@@ -1,14 +1,117 @@
 <#
 ================================================================================
- ACTIVE DIRECTORY & ENTRA ID ADMIN SUITE (VOLLSTÄNDIGER LETZTSTAND)
+ ACTIVE DIRECTORY & ENTRA ID ADMIN SUITE (VOLLSTÄNDIGER GESAMTSTAND - KORRIGIERT)
  Module: Tools 1 bis 9 & 11 | Sprachunterstützung: DE / EN | Native LDAP & Forms
+ Inklusive aller Korrekturen:
+  - Header: 3-Spalten Dashboard (OS & Domäne, Hardware & System, Entra ID Registry / CDJ)
+  - Tool 6: Saubere Tabellenansicht mit getrennten Tabs (DCs, FSMO-Rollen, Admins & Delegierung)
+  - Tool 9: Echtes Diff für 'Abweichende Rechte' ($r1 vs $r2) ohne Platzhalter
+  - Tool 11: Top-Aktionsleiste oben fixiert, Tabellen vollflächig & sauber sichtbar
+  - Zentrales UITheme Layout ($script:UITheme & Apply-StandardGridTheme)
 ================================================================================
 #>
 
-# Windows Forms & Drawing laden
+# Windows Forms, Drawing & DirectoryServices laden
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName System.DirectoryServices
 [System.Windows.Forms.Application]::EnableVisualStyles()
+
+# ==============================================================================
+# ZENTRALE LAYOUT- UND DESIGN-KONFIGURATION
+# ==============================================================================
+$script:UITheme = @{
+    # --- Tabellen / DataGridView Layout ---
+    HeaderHeight          = 36          # Höhe der Spaltenüberschriften in Pixel
+    RowHeight             = 28          # Höhe jeder Datenzeile in Pixel
+    HeaderPaddingLeft     = 8           # Innenabstand links im Header
+    HeaderPaddingRight    = 8           # Innenabstand rechts im Header
+    CellPaddingLeft       = 8           # Innenabstand links in den Zellen
+    CellPaddingRight      = 8           # Innenabstand rechts in den Zellen
+    CellPaddingTop        = 2           # Innenabstand oben in den Zellen
+    CellPaddingBottom     = 2           # Innenabstand unten in den Zellen
+    
+    # --- Schriftarten ---
+    FontFamily            = "Segoe UI"  # Standard-Schriftart
+    HeaderFontSize        = 9.5         # Schriftgröße Header (pt)
+    CellFontSize          = 9.0         # Schriftgröße Tabelleninhalt (pt)
+    HeaderFontStyle       = [System.Drawing.FontStyle]::Bold
+    CellFontStyle         = [System.Drawing.FontStyle]::Regular
+    
+    # --- Farbpalette Header & Tabellen ---
+    HeaderBackColor       = [System.Drawing.Color]::FromArgb(238, 242, 246)
+    HeaderForeColor       = [System.Drawing.Color]::FromArgb(40, 40, 40)
+    GridLineColor         = [System.Drawing.Color]::FromArgb(226, 232, 240)
+    RowBackColor          = [System.Drawing.Color]::White
+    RowAltBackColor       = [System.Drawing.Color]::FromArgb(250, 252, 254) # Wechselnde Zeilenfarbe
+    SelectionBackColor    = [System.Drawing.Color]::FromArgb(203, 228, 249)
+    SelectionForeColor    = [System.Drawing.Color]::Black
+
+    # --- Standard-Farben ---
+    AccentColor           = [System.Drawing.Color]::FromArgb(0, 120, 215)
+    AccentColorDark       = [System.Drawing.Color]::FromArgb(24, 37, 55)
+
+    # --- Standard-Fensterabmessungen ---
+    DefaultToolWidth      = 1200
+    DefaultToolHeight     = 780
+    HeaderPanelHeight     = 60
+}
+
+# ==============================================================================
+# HILFSFUNKTION: GLOBALER GRID-LAYOUT-STYLING-APPLIKATOR
+# ==============================================================================
+function Apply-StandardGridTheme {
+    param(
+        [Parameter(Mandatory=$true)]
+        [System.Windows.Forms.DataGridView]$Grid,
+        [switch]$EnableAlternatingRowColor
+    )
+
+    $theme = $script:UITheme
+
+    # Basis-Verhalten
+    $Grid.EnableHeadersVisualStyles = $false
+    $Grid.BorderStyle               = [System.Windows.Forms.BorderStyle]::None
+    $Grid.CellBorderStyle           = [System.Windows.Forms.DataGridViewCellBorderStyle]::SingleHorizontal
+    $Grid.GridColor                 = $theme.GridLineColor
+    $Grid.BackgroundColor           = [System.Drawing.Color]::White
+    $Grid.RowHeadersVisible         = $false
+    $Grid.AllowUserToResizeRows     = $false
+    $Grid.SelectionMode             = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
+    $Grid.ReadOnly                  = $true
+
+    # 1. Spaltenüberschriften (Header) Styling
+    $Grid.ColumnHeadersHeightSizeMode = [System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode]::DisableResizing
+    $Grid.ColumnHeadersHeight       = $theme.HeaderHeight
+    
+    $headerFont = New-Object System.Drawing.Font($theme.FontFamily, $theme.HeaderFontSize, $theme.HeaderFontStyle)
+    $Grid.ColumnHeadersDefaultCellStyle.Font      = $headerFont
+    $Grid.ColumnHeadersDefaultCellStyle.BackColor = $theme.HeaderBackColor
+    $Grid.ColumnHeadersDefaultCellStyle.ForeColor = $theme.HeaderForeColor
+    $Grid.ColumnHeadersDefaultCellStyle.Alignment = [System.Drawing.ContentAlignment]::MiddleLeft
+    $Grid.ColumnHeadersDefaultCellStyle.Padding   = New-Object System.Windows.Forms.Padding(
+        $theme.HeaderPaddingLeft, 0, $theme.HeaderPaddingRight, 0
+    )
+
+    # 2. Datenzeilen (Cells) Styling
+    $cellFont = New-Object System.Drawing.Font($theme.FontFamily, $theme.CellFontSize, $theme.CellFontStyle)
+    $Grid.RowTemplate.Height                   = $theme.RowHeight
+    $Grid.DefaultCellStyle.Font                = $cellFont
+    $Grid.DefaultCellStyle.BackColor           = $theme.RowBackColor
+    $Grid.DefaultCellStyle.SelectionBackColor  = $theme.SelectionBackColor
+    $Grid.DefaultCellStyle.SelectionForeColor  = $theme.SelectionForeColor
+    $Grid.DefaultCellStyle.Alignment          = [System.Drawing.ContentAlignment]::MiddleLeft
+    $Grid.DefaultCellStyle.Padding            = New-Object System.Windows.Forms.Padding(
+        $theme.CellPaddingLeft, $theme.CellPaddingTop, $theme.CellPaddingRight, $theme.CellPaddingBottom
+    )
+
+    # Optional: Alternierende Zeilenfarben
+    if ($EnableAlternatingRowColor) {
+        $Grid.AlternatingRowsDefaultCellStyle.BackColor          = $theme.RowAltBackColor
+        $Grid.AlternatingRowsDefaultCellStyle.SelectionBackColor = $theme.SelectionBackColor
+        $Grid.AlternatingRowsDefaultCellStyle.SelectionForeColor = $theme.SelectionForeColor
+    }
+}
 
 # ==============================================================================
 # 0. MULTILANGUAGE DICTIONARY (I18N: DE / EN)
@@ -20,12 +123,24 @@ $script:I18N = @{
         "Title"             = "Active Directory & Entra ID Admin Suite"
         "CategoryClient"    = "Kategorie: Client & Lokale Diagnose (Client Tools)"
         "CategoryAD"        = "Kategorie: Active Directory & Domänen Diagnose (AD Tools)"
-        "Computer"          = "Computer"
-        "Domain"            = "Domäne"
-        "LogonServer"       = "Logonserver"
-        "User"              = "Benutzer"
-        "EntraStatus"       = "Entra Join Status"
-        "Workgroup"         = "Arbeitsgruppe / Kein AD Join"
+        "LblHdrOS"          = "BETRIEBSSYSTEM & DOMÄNE"
+        "LblHdrSystem"      = "SYSTEM & HARDWARE"
+        "LblHdrEntra"       = "ENTRA ID / CLOUD STATUS"
+        "LblOS"             = "OS Edition"
+        "LblBuild"          = "Build"
+        "LblVersion"        = "Version"
+        "LblDomain"         = "Domäne / AD"
+        "LblLogonServer"    = "Logonserver"
+        "LblCompName"       = "Computername"
+        "LblManuf"          = "Hersteller"
+        "LblModel"          = "Modell"
+        "LblSerial"         = "Seriennummer"
+        "LblSysType"        = "Systemtyp"
+        "LblJoinStatus"     = "Join-Status"
+        "LblPrtStatus"      = "AzureAD PRT"
+        "LblTenantName"     = "Tenant Name"
+        "LblTenantId"       = "Tenant ID"
+        "LblDeviceId"       = "Device ID"
         "BtnTool1"          = "Tool 1: Multi-DC LastLogon Übersicht`n(Automatischer DC- & Site-Scan mit Checkbox-Auswahl & Live-Abfrage)"
         "BtnTool2"          = "Tool 2: Quick AD Audit`n(Inaktive Computerkonten, Passwort nie abgelaufen, Leere Gruppen)"
         "BtnTool3"          = "Tool 3: Entra ID / Hybrid Join Diagnostic`n(Auslesen von dsregcmd /status & Tenant Details)"
@@ -37,17 +152,77 @@ $script:I18N = @{
         "BtnTool9"          = "Tool 9: AD ACL & Berechtigungsvergleich`n(Objekt-Berechtigungen von Usern, Gruppen, Computern oder OUs vergleichen)"
         "BtnTool11"         = "Tool 11: AD Kennwortrichtlinien & PSO Audit`n(Default Domain Policy, Fine-Grained PSOs & Benutzer-Check)"
         "ErrNoDomain"       = "Dieses Werkzeug erfordert eine Active Directory Domänenmitgliedschaft."
+        "Tool11Title"       = "AD Kennwortrichtlinien & Fine-Grained PSO Audit"
+        "Tool11Sub"         = "Analyse der Standard Domänen-Kennwortrichtlinie und feingranularer Richtlinien (PSOs)."
+        "TabDefaultPolicy"  = "🔒 Standard Domänen-Kennwortrichtlinie"
+        "TabFineGrained"    = "🛡️ Feingranulare Richtlinien (PSOs)"
+        "TabUserCheck"      = "👤 Benutzer-Richtlinien Check"
+        "PropCategory"      = "Kategorie"
+        "PropName"          = "Kennwort-Eigenschaft"
+        "PropValue"         = "Konfigurierter Wert"
+        "CatPassword"       = "Kennwort-Richtlinie"
+        "CatLockout"        = "Kontosperrung"
+        "CatAppliedPolicy"  = "Angewendete Richtlinie"
+        "PropMinAge"        = "Minimales Kennwortalter"
+        "PropMaxAge"        = "Maximales Kennwortalter (Ablauf)"
+        "PropMinLength"     = "Minimale Kennwortlänge"
+        "PropHistory"       = "Kennworthistorie (Chronik)"
+        "PropComplexity"    = "Komplexitätsanforderungen"
+        "PropReversible"    = "Umkehrbare Verschlüsselung"
+        "PropThreshold"     = "Kontosperrungsschwelle"
+        "PropDuration"      = "Dauer der Kontosperrung"
+        "PropObservation"   = "Sperrzähler-Zurücksetzung"
+        "PropSource"        = "Richtlinienquelle"
+        "PropDN"            = "Distinguished Name"
+        "ValActive"         = "Aktiviert"
+        "ValDisabled"       = "Deaktiviert"
+        "ValActiveInsecure" = "⚠️ Aktiviert (Unsicher!)"
+        "ValDisabledSecure" = "Deaktiviert (Sicher)"
+        "ValDefaultPolicy"  = "Standard Domänen-Kennwortrichtlinie (Default Domain Policy)"
+        "PsoName"           = "PSO Name"
+        "PsoPrecedence"     = "Priorität (Rang)"
+        "PsoMinLength"      = "Min. Länge"
+        "PsoHistory"        = "Chronik"
+        "PsoComplexity"     = "Komplexität"
+        "PsoMinAge"         = "Min. Alter"
+        "PsoMaxAge"         = "Max. Alter"
+        "PsoThreshold"      = "Sperrschwelle"
+        "PsoDuration"       = "Sperrdauer"
+        "PsoAppliesTo"      = "Zugewiesen an"
+        "StatusReady"       = "Bereit."
+        "StatusSearching"   = "Lese Active Directory Kennwortrichtlinien aus..."
+        "StatusResult"      = "Ergebnis:"
+        "StatusResultReady" = "Richtlinie ermittelt für"
+        "StatusError"       = "Fehler"
+        "BtnExportCsv"      = "CSV Export"
+        "BtnRefresh"        = "Neu laden"
+        "UserSearchLabel"   = "Benutzername (sAMAccountName oder UPN):"
+        "BtnCheckUser"      = "Effektive Richtlinie berechnen"
+        "ErrUserEmpty"      = "Bitte einen Benutzernamen eingeben."
+        "ErrUserNotFound"   = "Benutzerkonto nicht im Active Directory gefunden."
     }
     "EN" = @{
         "Title"             = "Active Directory & Entra ID Admin Suite"
         "CategoryClient"    = "Category: Client & Local Diagnostics (Client Tools)"
         "CategoryAD"        = "Category: Active Directory & Domain Diagnostics (AD Tools)"
-        "Computer"          = "Computer"
-        "Domain"            = "Domain"
-        "LogonServer"       = "Logon Server"
-        "User"              = "User"
-        "EntraStatus"       = "Entra Join Status"
-        "Workgroup"         = "Workgroup / No AD Join"
+        "LblHdrOS"          = "OPERATING SYSTEM & DOMAIN"
+        "LblHdrSystem"      = "SYSTEM & HARDWARE"
+        "LblHdrEntra"       = "ENTRA ID / CLOUD STATUS"
+        "LblOS"             = "OS Edition"
+        "LblBuild"          = "Build"
+        "LblVersion"        = "Version"
+        "LblDomain"         = "Domain / AD"
+        "LblLogonServer"    = "Logon Server"
+        "LblCompName"       = "Computer Name"
+        "LblManuf"          = "Manufacturer"
+        "LblModel"          = "Model"
+        "LblSerial"         = "Serial Number"
+        "LblSysType"        = "System Type"
+        "LblJoinStatus"     = "Join Status"
+        "LblPrtStatus"      = "AzureAD PRT"
+        "LblTenantName"     = "Tenant Name"
+        "LblTenantId"       = "Tenant ID"
+        "LblDeviceId"       = "Device ID"
         "BtnTool1"          = "Tool 1: Multi-DC LastLogon Overview`n(Automatic DC & Site Scan with Checkbox Selection & Live Query)"
         "BtnTool2"          = "Tool 2: Quick AD Audit`n(Disabled Accounts, Password Never Expires, Empty Groups)"
         "BtnTool3"          = "Tool 3: Entra ID / Hybrid Join Diagnostic`n(Read dsregcmd /status & Tenant Details)"
@@ -56,9 +231,57 @@ $script:I18N = @{
         "BtnTool6"          = "Tool 6: Domain Overview & Admin Audit`n(FSMO Roles, AD Recycle Bin, Object Counts & Privileged Admins)"
         "BtnTool7"          = "Tool 7: AD Security & Out-of-Support OS Audit`n(Identify Legacy & End-of-Life Windows Systems in AD)"
         "BtnTool8"          = "Tool 8: Client Software & App Analysis`n(Win32 Registry & Store Apps with Language Detection & Export)"
-        "BtnTool9"          = "Tool 9: AD ACL & Permission Diff Tool`n(Compare object permissions of Users, Groups, Computers or OUs)"
+        "BtnTool9"          = "Tool 9: AD ACL & Permission Diff Tool`n(Compare ACLs on Users, Groups, Computers, or OUs)"
         "BtnTool11"         = "Tool 11: AD Password Policies & PSO Audit`n(Default Domain Policy, Fine-Grained PSOs & User Check)"
-        "ErrNoDomain"       = "This tool requires Active Directory Domain Membership."
+        "ErrNoDomain"       = "This tool requires Active Directory domain membership."
+        "Tool11Title"       = "AD Password Policies & Fine-Grained PSO Audit"
+        "Tool11Sub"         = "Analysis of the Default Domain Password Policy and Fine-Grained Password Policies (PSOs)."
+        "TabDefaultPolicy"  = "🔒 Default Domain Password Policy"
+        "TabFineGrained"    = "🛡️ Fine-Grained Password Policies (PSOs)"
+        "TabUserCheck"      = "👤 Effective User Policy Check"
+        "PropCategory"      = "Category"
+        "PropName"          = "Policy Property"
+        "PropValue"         = "Configured Value"
+        "CatPassword"       = "Password Policy"
+        "CatLockout"        = "Account Lockout"
+        "CatAppliedPolicy"  = "Applied Policy"
+        "PropMinAge"        = "Minimum Password Age"
+        "PropMaxAge"        = "Maximum Password Age"
+        "PropMinLength"     = "Minimum Password Length"
+        "PropHistory"       = "Password History Length"
+        "PropComplexity"    = "Password Complexity"
+        "PropReversible"    = "Reversible Encryption"
+        "PropThreshold"     = "Lockout Threshold"
+        "PropDuration"      = "Lockout Duration"
+        "PropObservation"   = "Reset Lockout Counter After"
+        "PropSource"        = "Policy Source"
+        "PropDN"            = "Distinguished Name"
+        "ValActive"         = "Enabled"
+        "ValDisabled"       = "Disabled"
+        "ValActiveInsecure" = "⚠️ Enabled (Insecure!)"
+        "ValDisabledSecure" = "Disabled (Secure)"
+        "ValDefaultPolicy"  = "Default Domain Password Policy"
+        "PsoName"           = "PSO Name"
+        "PsoPrecedence"     = "Precedence"
+        "PsoMinLength"      = "Min Length"
+        "PsoHistory"        = "History"
+        "PsoComplexity"     = "Complexity"
+        "PsoMinAge"         = "Min Age"
+        "PsoMaxAge"         = "Max Age"
+        "PsoThreshold"      = "Lockout Threshold"
+        "PsoDuration"       = "Lockout Duration"
+        "PsoAppliesTo"      = "Applies To"
+        "StatusReady"       = "Ready."
+        "StatusSearching"   = "Querying Active Directory Password Policies..."
+        "StatusResult"      = "Result:"
+        "StatusResultReady" = "Policy resolved for"
+        "StatusError"       = "Error"
+        "BtnExportCsv"      = "CSV Export"
+        "BtnRefresh"        = "Refresh"
+        "UserSearchLabel"   = "Username (sAMAccountName or UPN):"
+        "BtnCheckUser"      = "Calculate Effective Policy"
+        "ErrUserEmpty"      = "Please enter a username."
+        "ErrUserNotFound"   = "User account not found in Active Directory."
     }
 }
 
@@ -73,7 +296,7 @@ function Get-Text([string]$key) {
 # 1. GLOBALE HILFSFUNKTIONEN & LDAP-ENGINE
 # ==============================================================================
 function Assert-DomainJoined {
-    $isDomain = (Get-CimInstance -ClassName Win32_ComputerSystem).PartOfDomain
+    $isDomain = (Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue).PartOfDomain
     if (-not $isDomain) {
         [System.Windows.Forms.MessageBox]::Show((Get-Text "ErrNoDomain"), "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
         return $false
@@ -81,7 +304,15 @@ function Assert-DomainJoined {
     return $true
 }
 
-# Native LDAP-Suche mit Server-Bindung (wichtig für DC-spezifische Werte wie lastLogon)
+function Get-DomainDN {
+    try {
+        $rootDSE = [ADSI]"LDAP://RootDSE"
+        return $rootDSE.defaultNamingContext.ToString()
+    } catch {
+        return $null
+    }
+}
+
 function Search-NativeLdap {
     param (
         [string]$LdapFilter = "(objectClass=*)",
@@ -105,7 +336,62 @@ function Search-NativeLdap {
     }
 }
 
-# LCID zu Klarnamen-Übersetzer für Software-Audit
+function Convert-LargeIntToTimeSpan {
+    param($val, $asDays = $false)
+    if ($null -eq $val -or $val -eq "" -or $val -eq 0) { 
+        return if ($script:CurrentLang -eq "DE") { "Nicht konfiguriert" } else { "Not Configured" } 
+    }
+    try {
+        $ticks = 0
+        if ($val -is [System.TimeSpan]) {
+            $ts = $val
+            if ($asDays) {
+                $unit = if ($script:CurrentLang -eq "DE") { "Tage" } else { "Days" }
+                return "{0:N1} $unit" -f $ts.TotalDays
+            } else {
+                if ($ts.TotalMinutes -ge 60) {
+                    $unit = if ($script:CurrentLang -eq "DE") { "Stunden" } else { "Hours" }
+                    return "{0:N1} $unit" -f $ts.TotalHours
+                } else {
+                    $unit = if ($script:CurrentLang -eq "DE") { "Minuten" } else { "Minutes" }
+                    return "{0:N0} $unit" -f $ts.TotalMinutes
+                }
+            }
+        }
+        if ($val -is [System.Int64] -or $val -is [int] -or $val -is [double]) {
+            $ticks = [long]$val
+        } elseif ($val.GetType().Name -eq "__ComObject" -or $val.GetType().FullName -like "*LargeInteger*") {
+            $high = $val.GetType().InvokeMember("HighPart", [System.Reflection.BindingFlags]::GetProperty, $null, $val, $null)
+            $low  = $val.GetType().InvokeMember("LowPart", [System.Reflection.BindingFlags]::GetProperty, $null, $val, $null)
+            $ticks = ([long]$high -shl 32) + [uint32]$low
+        } else {
+            $ticks = [long]::Parse($val.ToString())
+        }
+
+        if ($ticks -eq 0 -or $ticks -eq [Int64]::MinValue) {
+            return if ($script:CurrentLang -eq "DE") { "Nie ablaufend / Deaktiviert" } else { "Never Expires / Disabled" }
+        }
+
+        if ($ticks -lt 0) { $ticks = -$ticks }
+        $ts = [TimeSpan]::FromTicks($ticks)
+
+        if ($asDays) {
+            $unit = if ($script:CurrentLang -eq "DE") { "Tage" } else { "Days" }
+            return "{0:N1} $unit" -f $ts.TotalDays
+        } else {
+            if ($ts.TotalMinutes -ge 60) {
+                $unit = if ($script:CurrentLang -eq "DE") { "Stunden" } else { "Hours" }
+                return "{0:N1} $unit" -f $ts.TotalHours
+            } else {
+                $unit = if ($script:CurrentLang -eq "DE") { "Minuten" } else { "Minutes" }
+                return "{0:N0} $unit" -f $ts.TotalMinutes
+            }
+        }
+    } catch {
+        return $val.ToString()
+    }
+}
+
 function Convert-LcidToLanguageName {
     param([object]$lcid)
     if ($null -eq $lcid -or $lcid -eq "" -or $lcid -eq 0) { return "Neutral / Multilingual" }
@@ -133,7 +419,7 @@ function Convert-LcidToLanguageName {
     }
 }
 
-# Dynamische OS Support & EOL-Erkennungs-Engine für Tool 7
+# Dynamische OS Support & EOL-Erkennungs-Engine
 function Analyze-OSSupportDetails {
     param(
         [string]$OSName,
@@ -152,11 +438,23 @@ function Analyze-OSSupportDetails {
         $buildNumber = $Matches[1]
     } elseif ($OSVersion -match "10\.0\.(\d+)") {
         $buildNumber = $Matches[1]
-    } elseif ($OSVersion) {
+    } elseif ($OSVersion -and $OSVersion -ne "Unspecified OS") {
         $buildNumber = $OSVersion
     }
 
-    # 2. Feature Update & LTSC ermitteln
+    # Fallback: Build-Nummer aus OS-Namen erkennen, falls OSVersion im AD leer ist
+    if ($buildNumber -eq "Unbekannt" -or [string]::IsNullOrWhiteSpace($buildNumber)) {
+        if ($OSName -match "24H2") { $buildNumber = "26100" }
+        elseif ($OSName -match "23H2") { $buildNumber = "22631" }
+        elseif ($OSName -match "22H2" -and $OSName -like "*Windows 11*") { $buildNumber = "22621" }
+        elseif ($OSName -match "21H2" -and $OSName -like "*Windows 11*") { $buildNumber = "22000" }
+        elseif ($OSName -match "22H2" -and $OSName -like "*Windows 10*") { $buildNumber = "19045" }
+        elseif ($OSName -match "2021" -or ($OSName -like "*LTSC*" -and $OSName -match "21H2")) { $buildNumber = "19044" }
+        elseif ($OSName -match "2019" -or ($OSName -like "*LTSC*" -and $OSName -match "1809")) { $buildNumber = "17763" }
+        elseif ($OSName -match "2016" -or ($OSName -like "*LTSB*" -and $OSName -match "1607")) { $buildNumber = "14393" }
+        elseif ($OSName -match "2015" -or ($OSName -like "*LTSB*" -and $OSName -match "1507")) { $buildNumber = "10240" }
+    }
+
     $isLTSC = ($OSName -like "*LTSC*" -or $OSName -like "*LTSB*" -or $OSServicePack -like "*LTSC*" -or $OSServicePack -like "*LTSB*")
 
     if ($buildNumber -ne "Unbekannt") {
@@ -202,12 +500,19 @@ function Analyze-OSSupportDetails {
             }
         }
     } else {
-        if ($OSServicePack) { $clientVersion = $OSServicePack }
+        if ($OSName -like "*LTSC 2021*") { $clientVersion = "21H2 / LTSC 2021" }
+        elseif ($OSName -like "*LTSC 2019*") { $clientVersion = "1809 / LTSC 2019" }
+        elseif ($OSName -like "*LTSB 2016*") { $clientVersion = "1607 / LTSB 2016" }
+        elseif ($OSName -like "*Server 2022*") { $clientVersion = "Server 2022" }
+        elseif ($OSName -like "*Server 2019*") { $clientVersion = "Server 2019" }
+        elseif ($OSName -like "*Server 2016*") { $clientVersion = "Server 2016" }
+        elseif ($OSName -like "*Server 2012*") { $clientVersion = "Server 2012" }
+        elseif ($OSServicePack) { $clientVersion = $OSServicePack }
         elseif ($OSVersion) { $clientVersion = $OSVersion }
     }
 
     $isEnterpriseOrEdu = ($OSName -like "*Enterprise*" -or $OSName -like "*Education*")
-    $isLTSCOrLTSB     = ($isLTSC -or $clientVersion -like "*LTSC*" -or $clientVersion -like "*LTSB*")
+    $isLTSCOrLTSB      = ($isLTSC -or $clientVersion -like "*LTSC*" -or $clientVersion -like "*LTSB*")
 
     # 3. EOL-Datumsberechnung
     if ($OSName -like "*Windows 11*") {
@@ -285,7 +590,6 @@ function Analyze-OSSupportDetails {
         $eolDateString = "14.10.2034"; $targetDate = [datetime]::ParseExact("14.10.2034", "dd.MM.yyyy", $null)
     }
 
-    # 4. Dynamischer Statusvergleich
     if ($targetDate) {
         $today = Get-Date
         if ($today -ge $targetDate) {
@@ -305,32 +609,91 @@ function Analyze-OSSupportDetails {
     }
 }
 
-# Lokale Systemparameter auslesen
+# ==============================================================================
+# LOKALE SYSTEMPARAMETER, HARDWARE- & ENTRA-DATEN AUSLESEN
+# ==============================================================================
 $localComputerName = $env:COMPUTERNAME
 $localUserName     = $env:USERNAME
-$cs = Get-CimInstance -ClassName Win32_ComputerSystem
-$localDomainName   = if ($cs.PartOfDomain) { $cs.Domain } else { "WORKGROUP" }
-$localLogonServer  = if ($env:LOGONSERVER) { $env:LOGONSERVER.TrimStart('\') } else { "Local" }
 
+# Hardware- & BIOS-Details
+$cs   = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+$bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction SilentlyContinue
+
+$localManufacturer = if ($cs.Manufacturer) { $cs.Manufacturer } else { "N/A" }
+$localModel        = if ($cs.Model) { $cs.Model } else { "N/A" }
+$localSystemType   = if ($cs.SystemType) { $cs.SystemType } else { "N/A" }
+$localSerial       = if ($bios.SerialNumber) { $bios.SerialNumber } else { "N/A" }
+
+# Domäne & Logonserver
+$localDomainName   = if ($cs.PartOfDomain -and $cs.Domain) { $cs.Domain } else { "WORKGROUP" }
+$localLogonServer  = if ($env:LOGONSERVER) { $env:LOGONSERVER.TrimStart('\') } else { "Lokal" }
+
+# Entra ID / Hybrid Join Details (Registry CloudDomainJoin + dsregcmd)
 $localJoinStatus = "Nicht gekoppelt"
 $localAzureAdPrt = "NO"
+$localTenantName = "N/A"
+$localTenantId   = "N/A"
+$localDeviceId   = "N/A"
+
 try {
-    $dsreg = dsregcmd /status
-    if ($dsreg -match "AzureAdJoined\s*:\s*YES") { $localJoinStatus = "Azure AD Joined" }
-    if ($dsreg -match "EnterpriseJoined\s*:\s*YES") { $localJoinStatus = "Hybrid Joined" }
-    if ($dsreg -match "AzureAdPrt\s*:\s*YES") { $localAzureAdPrt = "YES" }
+    $cdjJoin = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\CloudDomainJoin\JoinInfo\*" -ErrorAction SilentlyContinue
+    if ($cdjJoin) {
+        if ($cdjJoin.TenantId) { $localTenantId = $cdjJoin.TenantId }
+        if ($cdjJoin.DeviceId) { $localDeviceId = $cdjJoin.DeviceId }
+    }
+    $cdjTenant = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\CloudDomainJoin\TenantInfo\*" -ErrorAction SilentlyContinue
+    if ($cdjTenant -and $cdjTenant.DisplayName) {
+        $localTenantName = $cdjTenant.DisplayName
+    }
 } catch {}
 
-$osInfo = Get-CimInstance -ClassName Win32_OperatingSystem
-$osNameFormatted   = $osInfo.Caption
-$osVersionRelease  = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name DisplayVersion -ErrorAction SilentlyContinue).DisplayVersion
-$osBuildFormatted  = "$($osInfo.Version) ($($osInfo.BuildNumber))"
+try {
+    $dsreg = dsregcmd /status 2>$null
+    if ($dsreg -match "AzureAdJoined\s*:\s*YES")    { $localJoinStatus = "Azure AD Joined" }
+    if ($dsreg -match "EnterpriseJoined\s*:\s*YES") { $localJoinStatus = "Hybrid Joined" }
+    if ($dsreg -match "DomainJoined\s*:\s*YES" -and $localJoinStatus -eq "Nicht gekoppelt") { 
+        $localJoinStatus = "AD Domain Joined" 
+    }
+    if ($dsreg -match "AzureAdPrt\s*:\s*YES")       { $localAzureAdPrt = "YES" }
+
+    if ($localTenantName -eq "N/A" -and ($dsreg -match "TenantName\s*:\s*(.+)"))           { $localTenantName = $matches[1].Trim() }
+    if ($localTenantId -eq "N/A"   -and ($dsreg -match "TenantId\s*:\s*([a-fA-F0-9\-]+)")) { $localTenantId   = $matches[1].Trim() }
+    if ($localDeviceId -eq "N/A"   -and ($dsreg -match "DeviceId\s*:\s*([a-fA-F0-9\-]+)")) { $localDeviceId   = $matches[1].Trim() }
+} catch {}
+
+# Betriebssystem Details mit Fallback
+$osInfo            = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
+$osCaption         = if ($osInfo.Caption) { ($osInfo.Caption -replace "Microsoft ", "").Trim() } else { "Windows" }
+$osBuildNumber     = if ($osInfo.BuildNumber) { $osInfo.BuildNumber } else { "N/A" }
+$osBuildFull       = "$($osInfo.Version) (Build $osBuildNumber)"
 $osArchFormatted   = $osInfo.OSArchitecture
-$osInstallDateForm = $osInfo.InstallDate.ToString("dd.MM.yyyy HH:mm")
-$osPatchFormatted  = (Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 1).HotFixID
+$osInstallDateForm = if ($osInfo.InstallDate) { $osInfo.InstallDate.ToString("dd.MM.yyyy HH:mm") } else { "N/A" }
+$osPatchFormatted  = (Get-HotFix -ErrorAction SilentlyContinue | Sort-Object InstalledOn -Descending | Select-Object -First 1).HotFixID
+
+$osVersionDisplay = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name DisplayVersion -ErrorAction SilentlyContinue).DisplayVersion
+if (-not $osVersionDisplay) {
+    $osVersionDisplay = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name ReleaseId -ErrorAction SilentlyContinue).ReleaseId
+}
+if (-not $osVersionDisplay) {
+    $bNum = 0
+    [int]::TryParse($osBuildNumber, [ref]$bNum) | Out-Null
+    $osVersionDisplay = switch ($bNum) {
+        26100 { "24H2" }
+        22631 { "23H2" }
+        22621 { "22H2" }
+        22000 { "21H2" }
+        19045 { "22H2" }
+        19044 { "21H2" }
+        19043 { "21H1" }
+        19042 { "20H2" }
+        17763 { "1809" }
+        14393 { "1607" }
+        default { if ($osInfo.Version) { $osInfo.Version } else { "N/A" } }
+    }
+}
 
 # ===================================================================
-# MODULE TOOL 1: MULTI-DC LASTLOGON (INKL. SORTIER-AUSWAHL & SPALTEN-KLICK)
+# MODULE TOOL 1: MULTI-DC LASTLOGON
 # ===================================================================
 function Open-ToolLastLogon {
     if (-not (Assert-DomainJoined)) { return }
@@ -339,7 +702,7 @@ function Open-ToolLastLogon {
     $subForm.Text = "Tool 1: Multi-DC LastLogon Analyse"
     $subForm.Size = New-Object System.Drawing.Size(1280, 800)
     $subForm.StartPosition = "CenterParent"
-    $subForm.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $subForm.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
 
     $pnlTop = New-Object System.Windows.Forms.Panel
     $pnlTop.Dock = [System.Windows.Forms.DockStyle]::Top
@@ -413,7 +776,7 @@ function Open-ToolLastLogon {
     $gridDCs.AllowUserToDeleteRows = $false
     $gridDCs.RowHeadersVisible = $false
     $gridDCs.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
-    $gridDCs.BackgroundColor = [System.Drawing.Color]::White
+    Apply-StandardGridTheme -Grid $gridDCs
     $grpDCs.Controls.Add($gridDCs)
 
     $colCheck = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
@@ -467,7 +830,7 @@ function Open-ToolLastLogon {
     $gridResults.AllowUserToAddRows = $false
     $gridResults.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::AllCells
     $gridResults.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $gridResults.BackgroundColor = [System.Drawing.Color]::White
+    Apply-StandardGridTheme -Grid $gridResults
     $subForm.Controls.Add($gridResults)
 
     $gridResults.BringToFront()
@@ -708,7 +1071,7 @@ function Open-ToolLastLogon {
                 $results | Sort-Object @{
                     Expression = { 
                         if ($_."Inaktiv seit (Tage)" -eq "Nie") { [int]::MaxValue } else { [int]$_."Inaktiv seit (Tage)" } 
-                    }; 
+                    };
                     Descending = $false 
                 }, "Computer"
             }
@@ -739,12 +1102,13 @@ function Open-ToolADAudit {
     $subForm.Text = "Tool 2: Quick AD Audit & Abfragen"
     $subForm.Size = New-Object System.Drawing.Size(1000, 600)
     $subForm.StartPosition = "CenterParent"
+    $subForm.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
 
     $pnlTop = New-Object System.Windows.Forms.Panel
     $pnlTop.Dock = "Top"; $pnlTop.Height = 60; $subForm.Controls.Add($pnlTop)
 
     $cmbQuery = New-Object System.Windows.Forms.ComboBox
-    $cmbQuery.DropDownStyle = "DropDownList"; $cmbQuery.Location = "15, 18"; $cmbQuery.Width = "300"
+    $cmbQuery.DropDownStyle = "DropDownList"; $cmbQuery.Location = "15, 18"; $cmbQuery.Width = 300
     [void]$cmbQuery.Items.AddRange(@("Deaktivierte Computerkonten", "Passwort läuft nie ab (User)", "Leere AD-Gruppen"))
     $cmbQuery.SelectedIndex = 0; $pnlTop.Controls.Add($cmbQuery)
 
@@ -752,7 +1116,9 @@ function Open-ToolADAudit {
     $btnRun.Text = "Abfrage starten"; $btnRun.Location = "330, 16"; $btnRun.Size = "130, 28"; $pnlTop.Controls.Add($btnRun)
 
     $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Dock = "Fill"; $grid.ReadOnly = $true; $grid.AutoSizeColumnsMode = "Fill"; $subForm.Controls.Add($grid); $grid.BringToFront()
+    $grid.Dock = "Fill"; $grid.ReadOnly = $true; $grid.AutoSizeColumnsMode = "Fill"; 
+    Apply-StandardGridTheme -Grid $grid -EnableAlternatingRowColor
+    $subForm.Controls.Add($grid); $grid.BringToFront()
 
     $btnRun.Add_Click({
         $sel = $cmbQuery.SelectedIndex
@@ -802,7 +1168,7 @@ function Open-ToolGroupsAndGPO {
     $subForm.Text = "Tool 4: Gruppenmitgliedschaften & angewendete GPOs"
     $subForm.Size = New-Object System.Drawing.Size(1000, 700)
     $subForm.StartPosition = "CenterParent"
-    $subForm.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $subForm.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
 
     $tabControl = New-Object System.Windows.Forms.TabControl
     $tabControl.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -819,7 +1185,7 @@ function Open-ToolGroupsAndGPO {
     $gridUserGroups.AllowUserToAddRows = $false
     $gridUserGroups.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::AllCells
     $gridUserGroups.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $gridUserGroups.BackgroundColor = [System.Drawing.Color]::White
+    Apply-StandardGridTheme -Grid $gridUserGroups -EnableAlternatingRowColor
     $tabUserGroup.Controls.Add($gridUserGroups)
     $tabControl.TabPages.Add($tabUserGroup)
 
@@ -834,7 +1200,7 @@ function Open-ToolGroupsAndGPO {
     $gridPCGroups.AllowUserToAddRows = $false
     $gridPCGroups.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::AllCells
     $gridPCGroups.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $gridPCGroups.BackgroundColor = [System.Drawing.Color]::White
+    Apply-StandardGridTheme -Grid $gridPCGroups -EnableAlternatingRowColor
     $tabPCGroup.Controls.Add($gridPCGroups)
     $tabControl.TabPages.Add($tabPCGroup)
 
@@ -903,9 +1269,12 @@ function Open-ToolWin11Check {
     $subForm.Text = "Tool 5: Windows 11 Readiness & OS Details"
     $subForm.Size = New-Object System.Drawing.Size(850, 500)
     $subForm.StartPosition = "CenterParent"
+    $subForm.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
 
     $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Dock = "Fill"; $grid.ReadOnly = $true; $grid.AutoSizeColumnsMode = "Fill"; $subForm.Controls.Add($grid)
+    $grid.Dock = "Fill"; $grid.ReadOnly = $true; $grid.AutoSizeColumnsMode = "Fill"
+    Apply-StandardGridTheme -Grid $grid -EnableAlternatingRowColor
+    $subForm.Controls.Add($grid)
 
     $tpm = Get-CimInstance -Namespace "Root\CIMv2\Security\MicrosoftTpm" -ClassName Win32_Tpm -ErrorAction SilentlyContinue
     $tpmOk = ($tpm -and $tpm.SpecVersion -match "2.0")
@@ -919,7 +1288,7 @@ function Open-ToolWin11Check {
         [PSCustomObject]@{ "Prüfkriterium" = "Secure Boot"; "Status" = if ($sb) { "Aktiviert" } else { "Deaktiviert / Legacy" }; "Erforderlich" = "Aktiviert" }
         [PSCustomObject]@{ "Prüfkriterium" = "Arbeitsspeicher (RAM)"; "Status" = "$ramGB GB"; "Erforderlich" = ">= 4 GB" }
         [PSCustomObject]@{ "Prüfkriterium" = "CPU-Kerne"; "Status" = "$cpuCores Kerne"; "Erforderlich" = ">= 2 Kerne" }
-        [PSCustomObject]@{ "Prüfkriterium" = "Installiertes OS"; "Status" = "$osNameFormatted (Build $osBuildFormatted)"; "Erforderlich" = "Windows 10/11" }
+        [PSCustomObject]@{ "Prüfkriterium" = "Installiertes OS"; "Status" = "$osCaption (Build $osBuildFull)"; "Erforderlich" = "Windows 10/11" }
     )
     $arr = [System.Collections.ArrayList]::new()
     foreach ($c in $checks) { [void]$arr.Add($c) }
@@ -928,248 +1297,329 @@ function Open-ToolWin11Check {
 }
 
 # ==============================================================================
-# TOOL 6: DOMAIN OVERVIEW & PRIVILEGED ADMIN AUDIT (TABS & DATAGRIDS)
+# TOOL 6: DOMAIN OVERVIEW & PRIVILEGED ADMIN AUDIT (LAYOUT- & TAB-FIX)
 # ==============================================================================
 function Open-ToolDomainOverview {
     if (-not (Assert-DomainJoined)) { return }
 
     $subForm = New-Object System.Windows.Forms.Form
-    $subForm.Text = "Tool 6: Domänen-Übersicht & Admin-Audit"
-    $subForm.Size = New-Object System.Drawing.Size(1050, 720)
+    $subForm.Text = "Tool 6 - Active Directory Domänen-Übersicht & Admin-Audit"
+    $subForm.Size = New-Object System.Drawing.Size(1200, 780)
     $subForm.StartPosition = "CenterParent"
-    $subForm.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $subForm.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
     $subForm.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
     $tabControl = New-Object System.Windows.Forms.TabControl
     $tabControl.Dock = [System.Windows.Forms.DockStyle]::Fill
     $tabControl.Padding = New-Object System.Drawing.Point(12, 6)
-    $subForm.Controls.Add($tabControl)
 
-    # TAB 1: Domäne & FSMO
-    $tabDomain = New-Object System.Windows.Forms.TabPage
-    $tabDomain.Text = "  🌐 Domäne & FSMO Rollen  "
-    $tabDomain.BackColor = [System.Drawing.Color]::White
-    $tabControl.TabPages.Add($tabDomain)
-
-    $gridDomain = New-Object System.Windows.Forms.DataGridView
-    $gridDomain.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $gridDomain.ReadOnly = $true
-    $gridDomain.AllowUserToAddRows = $false
-    $gridDomain.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
-    $gridDomain.RowHeadersVisible = $false
-    $gridDomain.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $gridDomain.BackgroundColor = [System.Drawing.Color]::White
-    $gridDomain.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-    $gridDomain.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 249, 250)
-    $tabDomain.Controls.Add($gridDomain)
-
-    # TAB 2: Admins
-    $tabAdmins = New-Object System.Windows.Forms.TabPage
-    $tabAdmins.Text = "  🛡️ Privilegierte Administratoren  "
-    $tabAdmins.BackColor = [System.Drawing.Color]::White
-    $tabControl.TabPages.Add($tabAdmins)
-
-    $pnlAdminTop = New-Object System.Windows.Forms.Panel
-    $pnlAdminTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $pnlAdminTop.Height = 50
-    $pnlAdminTop.BackColor = [System.Drawing.Color]::FromArgb(240, 243, 246)
-    $tabAdmins.Controls.Add($pnlAdminTop)
-
-    $lblAdminFilter = New-Object System.Windows.Forms.Label
-    $lblAdminFilter.Text = "Filter / Suche:"
-    $lblAdminFilter.Location = New-Object System.Drawing.Point(15, 16)
-    $lblAdminFilter.AutoSize = $true
-    $pnlAdminTop.Controls.Add($lblAdminFilter)
-
-    $txtAdminFilter = New-Object System.Windows.Forms.TextBox
-    $txtAdminFilter.Location = New-Object System.Drawing.Point(110, 13)
-    $txtAdminFilter.Size = New-Object System.Drawing.Size(260, 25)
-    $pnlAdminTop.Controls.Add($txtAdminFilter)
-
-    $lblAdminCount = New-Object System.Windows.Forms.Label
-    $lblAdminCount.Location = New-Object System.Drawing.Point(390, 16)
-    $lblAdminCount.AutoSize = $true
-    $lblAdminCount.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $pnlAdminTop.Controls.Add($lblAdminCount)
-
-    $gridAdmins = New-Object System.Windows.Forms.DataGridView
-    $gridAdmins.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $gridAdmins.ReadOnly = $true
-    $gridAdmins.AllowUserToAddRows = $false
-    $gridAdmins.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
-    $gridAdmins.RowHeadersVisible = $false
-    $gridAdmins.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $gridAdmins.BackgroundColor = [System.Drawing.Color]::White
-    $gridAdmins.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-    $gridAdmins.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 249, 250)
-    $tabAdmins.Controls.Add($gridAdmins)
-    $gridAdmins.BringToFront()
-
-    # TAB 3: DCs
+    # --- TAB 1: DOMÄNENCONTROLLER (DCs) ---
     $tabDCs = New-Object System.Windows.Forms.TabPage
-    $tabDCs.Text = "  🖥️ Domänencontroller  "
+    $tabDCs.Text = if ($script:CurrentLang -eq "DE") { "  🖥️ Domänencontroller (DCs)  " } else { "  🖥️ Domain Controllers (DCs)  " }
     $tabDCs.BackColor = [System.Drawing.Color]::White
-    $tabControl.TabPages.Add($tabDCs)
+
+    $pnlTopDC = New-Object System.Windows.Forms.Panel
+    $pnlTopDC.Dock = [System.Windows.Forms.DockStyle]::Top
+    $pnlTopDC.Height = 44
+    $pnlTopDC.BackColor = [System.Drawing.Color]::FromArgb(248, 249, 250)
+
+    $lblDCCount = New-Object System.Windows.Forms.Label
+    $lblDCCount.Text = if ($script:CurrentLang -eq "DE") { "Erkannte Domain Controller in der Gesamtstruktur:" } else { "Discovered Domain Controllers in Forest:" }
+    $lblDCCount.Location = New-Object System.Drawing.Point(12, 13)
+    $lblDCCount.AutoSize = $true
+    $lblDCCount.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9.5, [System.Drawing.FontStyle]::Bold)
+
+    $btnRefreshDC = New-Object System.Windows.Forms.Button
+    $btnRefreshDC.Text = if ($script:CurrentLang -eq "DE") { "Aktualisieren" } else { "Refresh" }
+    $btnRefreshDC.Location = New-Object System.Drawing.Point(420, 8)
+    $btnRefreshDC.Size = New-Object System.Drawing.Size(120, 28)
+    $btnRefreshDC.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
+    $btnRefreshDC.ForeColor = [System.Drawing.Color]::White
+    $btnRefreshDC.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+
+    $pnlTopDC.Controls.AddRange(@($lblDCCount, $btnRefreshDC))
 
     $gridDCs = New-Object System.Windows.Forms.DataGridView
     $gridDCs.Dock = [System.Windows.Forms.DockStyle]::Fill
     $gridDCs.ReadOnly = $true
     $gridDCs.AllowUserToAddRows = $false
     $gridDCs.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
-    $gridDCs.RowHeadersVisible = $false
-    $gridDCs.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $gridDCs.BackgroundColor = [System.Drawing.Color]::White
-    $gridDCs.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-    $gridDCs.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 249, 250)
+    Apply-StandardGridTheme -Grid $gridDCs -EnableAlternatingRowColor
+
     $tabDCs.Controls.Add($gridDCs)
+    $tabDCs.Controls.Add($pnlTopDC)
+    $pnlTopDC.SendToBack()
+    $gridDCs.BringToFront()
 
-    $domainDetails = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $dcList = [System.Collections.Generic.List[PSCustomObject]]::new()
+    # --- TAB 2: FSMO ROLLEN & DOMÄNENSTATUS ---
+    $tabFSMO = New-Object System.Windows.Forms.TabPage
+    $tabFSMO.Text = if ($script:CurrentLang -eq "DE") { "  ⚙️ FSMO-Rollen & Domänenstatus  " } else { "  ⚙️ FSMO Roles & Domain Status  " }
+    $tabFSMO.BackColor = [System.Drawing.Color]::White
 
-    try {
-        $domain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
-        $forest = [System.DirectoryServices.ActiveDirectory.Forest]::GetCurrentForest()
+    $pnlTopFSMO = New-Object System.Windows.Forms.Panel
+    $pnlTopFSMO.Dock = [System.Windows.Forms.DockStyle]::Top
+    $pnlTopFSMO.Height = 44
+    $pnlTopFSMO.BackColor = [System.Drawing.Color]::FromArgb(248, 249, 250)
 
-        $rbStatus = "Deaktiviert / Unbekannt"
-        try {
-            $rootDSE = New-Object System.DirectoryServices.DirectoryEntry("LDAP://RootDSE")
-            $configDN = $rootDSE.Properties["configurationNamingContext"][0]
-            $rbDN = "CN=Recycle Bin Feature,CN=Optional Features,CN=Directory Service,CN=Windows NT,CN=Services,$configDN"
-            $rbEntry = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$rbDN")
-            if ($rbEntry -and $rbEntry.Properties["msDS-EnabledFeatureBL"].Count -gt 0) {
-                $rbStatus = "🟢 Aktiviert (Enabled)"
+    $lblFSMOHead = New-Object System.Windows.Forms.Label
+    $lblFSMOHead.Text = if ($script:CurrentLang -eq "DE") { "Zentrale FSMO Rolleninhaber & Gesamtstruktur-Ebenen:" } else { "FSMO Role Holders & Forest Levels:" }
+    $lblFSMOHead.Location = New-Object System.Drawing.Point(12, 13)
+    $lblFSMOHead.AutoSize = $true
+    $lblFSMOHead.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9.5, [System.Drawing.FontStyle]::Bold)
+    $pnlTopFSMO.Controls.Add($lblFSMOHead)
+
+    $gridFSMO = New-Object System.Windows.Forms.DataGridView
+    $gridFSMO.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $gridFSMO.ReadOnly = $true
+    $gridFSMO.AllowUserToAddRows = $false
+    $gridFSMO.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    Apply-StandardGridTheme -Grid $gridFSMO -EnableAlternatingRowColor
+
+    $tabFSMO.Controls.Add($gridFSMO)
+    $tabFSMO.Controls.Add($pnlTopFSMO)
+    $pnlTopFSMO.SendToBack()
+    $gridFSMO.BringToFront()
+
+    # --- TAB 3: PRIVILEGIERTE ADMINS & DELEGIERUNG ---
+    $tabAdmins = New-Object System.Windows.Forms.TabPage
+    $tabAdmins.Text = if ($script:CurrentLang -eq "DE") { "  🛡️ Privilegierte Konten & Delegierung  " } else { "  🛡️ Privileged Accounts & Delegation  " }
+    $tabAdmins.BackColor = [System.Drawing.Color]::White
+
+    $pnlAdminTop = New-Object System.Windows.Forms.Panel
+    $pnlAdminTop.Dock = [System.Windows.Forms.DockStyle]::Top
+    $pnlAdminTop.Height = 48
+    $pnlAdminTop.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
+
+    $lblAdminFilter = New-Object System.Windows.Forms.Label
+    $lblAdminFilter.Text = if ($script:CurrentLang -eq "DE") { "Live-Filter:" } else { "Live Filter:" }
+    $lblAdminFilter.Location = New-Object System.Drawing.Point(12, 14)
+    $lblAdminFilter.AutoSize = $true
+    $lblAdminFilter.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9.0, [System.Drawing.FontStyle]::Bold)
+
+    $txtAdminFilter = New-Object System.Windows.Forms.TextBox
+    $txtAdminFilter.Location = New-Object System.Drawing.Point(95, 11)
+    $txtAdminFilter.Size = New-Object System.Drawing.Size(260, 24)
+
+    $lblAdminCount = New-Object System.Windows.Forms.Label
+    $lblAdminCount.Location = New-Object System.Drawing.Point(375, 14)
+    $lblAdminCount.AutoSize = $true
+    $lblAdminCount.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9, [System.Drawing.FontStyle]::Regular)
+    $lblAdminCount.ForeColor = [System.Drawing.Color]::FromArgb(50, 70, 90)
+
+    $pnlAdminTop.Controls.AddRange(@($lblAdminFilter, $txtAdminFilter, $lblAdminCount))
+
+    $pnlAdminLegend = New-Object System.Windows.Forms.Panel
+    $pnlAdminLegend.Dock = [System.Windows.Forms.DockStyle]::Bottom
+    $pnlAdminLegend.Height = 32
+    $pnlAdminLegend.BackColor = [System.Drawing.Color]::FromArgb(246, 248, 250)
+
+    $lblAdminLegend = New-Object System.Windows.Forms.Label
+    $lblAdminLegend.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $lblAdminLegend.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $lblAdminLegend.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 8.5)
+    $lblAdminLegend.Text = " 🟥 Rot: Schema-Admins (Sollte im Normalbetrieb leer sein!)  |  ⚠️ Gelb: Delegierung erlaubt (Konto nicht vor Kerberos-Delegierung geschützt)"
+    $pnlAdminLegend.Controls.Add($lblAdminLegend)
+
+    $gridAdmins = New-Object System.Windows.Forms.DataGridView
+    $gridAdmins.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $gridAdmins.ReadOnly = $true
+    $gridAdmins.AllowUserToAddRows = $false
+    $gridAdmins.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    Apply-StandardGridTheme -Grid $gridAdmins -EnableAlternatingRowColor
+
+    $tabAdmins.Controls.Add($gridAdmins)
+    $tabAdmins.Controls.Add($pnlAdminTop)
+    $tabAdmins.Controls.Add($pnlAdminLegend)
+    $pnlAdminTop.SendToBack()
+    $pnlAdminLegend.SendToBack()
+    $gridAdmins.BringToFront()
+
+    $tabControl.TabPages.AddRange(@($tabDCs, $tabFSMO, $tabAdmins))
+    $subForm.Controls.Add($tabControl)
+
+    $script:adminList = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $script:dcList    = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $script:fsmoList  = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $script:SchemaAdminSid = ""
+
+    $applyAdminFormatting = {
+        foreach ($row in $gridAdmins.Rows) {
+            $grp  = [string]$row.Cells["Admin-Gruppe"].Value
+            $sid  = [string]$row.Cells["Gruppen-SID"].Value
+            $del  = [string]$row.Cells["Delegierungsschutz"].Value
+            $stat = [string]$row.Cells["Status"].Value
+
+            if (($script:SchemaAdminSid -and $sid -eq $script:SchemaAdminSid) -or ($grp -match "Schema[- ]?Admins")) {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 224, 224)
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(180, 0, 0)
+                $row.DefaultCellStyle.Font = New-Object System.Drawing.Font($gridAdmins.Font, [System.Drawing.FontStyle]::Bold)
             }
-        } catch { }
+            elseif ($del -like "*Ungeschützt*") {
+                $row.Cells["Delegierungsschutz"].Style.BackColor = [System.Drawing.Color]::FromArgb(255, 243, 205)
+                $row.Cells["Delegierungsschutz"].Style.ForeColor = [System.Drawing.Color]::FromArgb(160, 80, 0)
+                $row.Cells["Delegierungsschutz"].Style.Font = New-Object System.Drawing.Font($gridAdmins.Font, [System.Drawing.FontStyle]::Bold)
+            }
 
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "Allgemein"; "Eigenschaft" = "Domänenname (FQDN)"; "Wert" = $domain.Name })
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "Allgemein"; "Eigenschaft" = "Gesamtstruktur (Forest)"; "Wert" = $forest.Name })
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "Allgemein"; "Eigenschaft" = "Domänen-Funktionsebene"; "Wert" = $domain.DomainMode.ToString() })
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "Allgemein"; "Eigenschaft" = "Forest-Funktionsebene"; "Wert" = $forest.ForestMode.ToString() })
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "Allgemein"; "Eigenschaft" = "AD-Papierkorb (Recycle Bin)"; "Wert" = $rbStatus })
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "Allgemein"; "Eigenschaft" = "Anzahl Domänencontroller"; "Wert" = $domain.DomainControllers.Count.ToString() })
-
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "FSMO Rolle"; "Eigenschaft" = "PDC Emulator"; "Wert" = $domain.PdcRoleOwner.Name })
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "FSMO Rolle"; "Eigenschaft" = "RID Master"; "Wert" = $domain.RidRoleOwner.Name })
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "FSMO Rolle"; "Eigenschaft" = "Infrastructure Master"; "Wert" = $domain.InfrastructureRoleOwner.Name })
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "FSMO Rolle"; "Eigenschaft" = "Schema Master (Forest)"; "Wert" = $forest.SchemaRoleOwner.Name })
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "FSMO Rolle"; "Eigenschaft" = "Domain Naming Master (Forest)"; "Wert" = $forest.NamingRoleOwner.Name })
-
-        foreach ($dc in $domain.DomainControllers) {
-            $roles = @()
-            if ($dc.Name -eq $domain.PdcRoleOwner.Name) { $roles += "PDC" }
-            if ($dc.Name -eq $domain.RidRoleOwner.Name) { $roles += "RID" }
-            if ($dc.Name -eq $domain.InfrastructureRoleOwner.Name) { $roles += "Infra" }
-            if ($dc.Name -eq $forest.SchemaRoleOwner.Name) { $roles += "Schema" }
-            if ($dc.Name -eq $forest.NamingRoleOwner.Name) { $roles += "Naming" }
-            if ($roles.Count -eq 0) { $roles += "Standard DC" }
-
-            $dcList.Add([PSCustomObject]@{
-                "DC Hostname"     = $dc.Name
-                "IP-Adresse"      = $dc.IPAddress
-                "AD-Standort"     = $dc.SiteName
-                "Global Catalog"  = if ($dc.IsGlobalCatalog()) { "Ja" } else { "Nein" }
-                "Inhaber Rollen"  = ($roles -join ", ")
-                "Betriebssystem"  = $dc.OSVersion
-            })
+            if ($stat -eq "Deaktiviert") {
+                $row.Cells["Status"].Style.ForeColor = [System.Drawing.Color]::Gray
+            }
         }
     }
-    catch {
-        $domainDetails.Add([PSCustomObject]@{"Kategorie" = "Fehler"; "Eigenschaft" = "Hinweis"; "Wert" = "Domänenabfrage fehlgeschlagen: $($_.Exception.Message)" })
-    }
 
-    $gridDomain.DataSource = [System.Collections.ArrayList]::new($domainDetails)
-    $gridDCs.DataSource = [System.Collections.ArrayList]::new($dcList)
+    $loadDomainData = {
+        try {
+            $domain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
+            $forest = [System.DirectoryServices.ActiveDirectory.Forest]::GetCurrentForest()
 
-    $adminList = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $extractName = {
-        param($dn)
-        if ($dn -match "^CN=([^,]+)") { return $Matches[1] }
-        return $dn
-    }
+            # 1. DC Liste
+            $script:dcList.Clear()
+            foreach ($dc in $domain.DomainControllers) {
+                $os = "Windows Server"
+                try {
+                    $de = $dc.GetDirectoryEntry()
+                    if ($de.operatingSystem) { $os = "$($de.operatingSystem) $($de.operatingSystemServicePack)" }
+                } catch {}
 
-    $daGroups = Search-NativeLdap -LdapFilter "(&(objectCategory=group)(|(sAMAccountName=Domain Admins)(sAMAccountName=Domänen-Admins)))" -PropertiesToLoad @("name","member","sAMAccountName")
-    if ($daGroups -and $daGroups.Count -gt 0) {
-        $gName = $daGroups[0].Properties["name"][0]
-        if ($daGroups[0].Properties["member"]) {
-            foreach ($m in $daGroups[0].Properties["member"]) {
-                $adminList.Add([PSCustomObject]@{
-                    "Admin-Gruppe"      = $gName
-                    "Account Name"      = (& $extractName $m)
-                    "Mitgliedschaft"    = "Explizit (member)"
-                    "DistinguishedName" = $m
+                $roles = @()
+                if ($dc.Name -eq $domain.PdcRoleOwner.Name) { $roles += "PDC" }
+                if ($dc.Name -eq $domain.RidRoleOwner.Name) { $roles += "RID" }
+                if ($dc.Name -eq $domain.InfrastructureRoleOwner.Name) { $roles += "Infra" }
+                if ($dc.Name -eq $forest.SchemaRoleOwner.Name) { $roles += "Schema" }
+                if ($dc.Name -eq $forest.NamingRoleOwner.Name) { $roles += "Naming" }
+                if ($roles.Count -eq 0) { $roles += "Standard DC" }
+
+                $script:dcList.Add([PSCustomObject]@{
+                    "DC Hostname"     = $dc.Name
+                    "AD Site"         = $dc.SiteName
+                    "IP-Adresse"      = $dc.IPAddress
+                    "Global Catalog"  = if ($dc.IsGlobalCatalog()) { "Ja / Active" } else { "Nein" }
+                    "Inhaber Rollen"  = ($roles -join ", ")
+                    "Betriebssystem"  = $os
                 })
             }
+            $gridDCs.DataSource = [System.Collections.ArrayList]::new($script:dcList)
+            $lblDCCount.Text = if ($script:CurrentLang -eq "DE") { "Gefundene Domain Controller ($($script:dcList.Count)):" } else { "Discovered Domain Controllers ($($script:dcList.Count)):" }
+
+            # 2. FSMO & Domänenstatus
+            $recycleBin = "Deaktiviert / Nicht konfiguriert"
+            try {
+                $rootDSE = [ADSI]"LDAP://RootDSE"
+                $partDN = "CN=Partitions," + $rootDSE.configurationNamingContext.ToString()
+                $partEntry = [ADSI]"LDAP://$partDN"
+                if ($partEntry.Properties["msDS-EnabledFeature"].Count -gt 0) {
+                    $recycleBin = "Aktiviert (Active Directory Recycle Bin ON)"
+                }
+            } catch {}
+
+            $script:fsmoList.Clear()
+            $script:fsmoList.Add([PSCustomObject]@{"Parameter / FSMO Rolle" = "PDC Emulator"; "Inhaber / Status" = $domain.PdcRoleOwner.Name; "Geltungsbereich" = "Domäne" })
+            $script:fsmoList.Add([PSCustomObject]@{"Parameter / FSMO Rolle" = "RID Master"; "Inhaber / Status" = $domain.RidRoleOwner.Name; "Geltungsbereich" = "Domäne" })
+            $script:fsmoList.Add([PSCustomObject]@{"Parameter / FSMO Rolle" = "Infrastructure Master"; "Inhaber / Status" = $domain.InfrastructureRoleOwner.Name; "Geltungsbereich" = "Domäne" })
+            $script:fsmoList.Add([PSCustomObject]@{"Parameter / FSMO Rolle" = "Schema Master"; "Inhaber / Status" = $forest.SchemaRoleOwner.Name; "Geltungsbereich" = "Gesamtstruktur" })
+            $script:fsmoList.Add([PSCustomObject]@{"Parameter / FSMO Rolle" = "Domain Naming Master"; "Inhaber / Status" = $forest.NamingRoleOwner.Name; "Geltungsbereich" = "Gesamtstruktur" })
+            $script:fsmoList.Add([PSCustomObject]@{"Parameter / FSMO Rolle" = "Domänen-Funktionsebene"; "Inhaber / Status" = $domain.DomainMode.ToString(); "Geltungsbereich" = "Domäne" })
+            $script:fsmoList.Add([PSCustomObject]@{"Parameter / FSMO Rolle" = "Gesamtstruktur-Funktionsebene"; "Inhaber / Status" = $forest.ForestMode.ToString(); "Geltungsbereich" = "Gesamtstruktur" })
+            $script:fsmoList.Add([PSCustomObject]@{"Parameter / FSMO Rolle" = "AD Papierkorb (Recycle Bin)"; "Inhaber / Status" = $recycleBin; "Geltungsbereich" = "Gesamtstruktur" })
+
+            $gridFSMO.DataSource = [System.Collections.ArrayList]::new($script:fsmoList)
+
+            # 3. Privilegierte Admin-Gruppen & Delegierung
+            $script:adminList.Clear()
+            $domDN = Get-DomainDN
+            $domainEntry = [ADSI]"LDAP://$domDN"
+            $domainSID = (New-Object System.Security.Principal.SecurityIdentifier($domainEntry.Properties["objectSid"][0], 0)).Value
+            $script:SchemaAdminSid = "$domainSID-518"
+
+            $groupsToQuery = @(
+                @{ Name = "Domänen-Admins";       SID = "$domainSID-512" },
+                @{ Name = "Organisations-Admins"; SID = "$domainSID-519" },
+                @{ Name = "Schema-Admins";        SID = $script:SchemaAdminSid },
+                @{ Name = "Administratoren (AD)"; SID = "S-1-5-32-544" },
+                @{ Name = "Konten-Operatoren";    SID = "$domainSID-517" },
+                @{ Name = "Server-Operatoren";    SID = "$domainSID-549" },
+                @{ Name = "Sicherungs-Operatoren";SID = "$domainSID-551" },
+                @{ Name = "GPO-Ersteller";        SID = "$domainSID-520" }
+            )
+
+            foreach ($g in $groupsToQuery) {
+                $gSearcher = New-Object DirectoryServices.DirectorySearcher($domainEntry)
+                $gSearcher.Filter = "(&(objectCategory=group)(objectsid=$($g.SID)))"
+                $groupObj = $gSearcher.FindOne()
+                if ($groupObj) {
+                    $groupName = if ($groupObj.Properties["samaccountname"].Count -gt 0) { $groupObj.Properties["samaccountname"][0] } else { $g.Name }
+                    
+                    foreach ($mDN in $groupObj.Properties["member"]) {
+                        try {
+                            $mSearcher = New-Object DirectoryServices.DirectorySearcher($domainEntry)
+                            $mSearcher.Filter = "(distinguishedName=$mDN)"
+                            $mObj = $mSearcher.FindOne()
+                            
+                            if ($mObj) {
+                                $sAM = [string]$mObj.Properties["samaccountname"][0]
+                                $uac = if ($mObj.Properties["useraccountcontrol"].Count -gt 0) { [int]$mObj.Properties["useraccountcontrol"][0] } else { 0 }
+                                $enabled = if (($uac -band 2) -eq 2) { "Deaktiviert" } else { "Aktiv" }
+
+                                $isNotDelegated = ($uac -band 0x100000) -eq 0x100000
+                                $delegationStatus = if ($isNotDelegated) { 
+                                    "Geschützt (Keine Delegierung)" 
+                                } else { 
+                                    "⚠️ Ungeschützt (Delegierung erlaubt)" 
+                                }
+
+                                $script:adminList.Add([PSCustomObject]@{
+                                    "Admin-Gruppe"        = $groupName
+                                    "Gruppen-SID"         = $g.SID
+                                    "Account Name"        = $sAM
+                                    "Status"              = $enabled
+                                    "Delegierungsschutz"  = $delegationStatus
+                                    "DistinguishedName"   = $mDN
+                                })
+                            }
+                        } catch {}
+                    }
+                }
+            }
+
+            $gridAdmins.DataSource = [System.Collections.ArrayList]::new($script:adminList)
+            $lblAdminCount.Text = "Gefundene privilegierte Konten: $($script:adminList.Count)"
+            if ($gridAdmins.Columns["Gruppen-SID"]) { $gridAdmins.Columns["Gruppen-SID"].Visible = $false }
+            if ($gridAdmins.Columns["DistinguishedName"]) { $gridAdmins.Columns["DistinguishedName"].FillWeight = 140 }
+
+            & $applyAdminFormatting
+
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("Fehler beim LDAP-Abruf: $($_.Exception.Message)", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
         }
     }
 
-    $primaryAdmins = Search-NativeLdap -LdapFilter "(&(objectCategory=person)(objectClass=user)(primaryGroupID=512))" -PropertiesToLoad @("sAMAccountName","distinguishedName")
-    foreach ($pa in $primaryAdmins) {
-        $dn = $pa.Properties["distinguishedname"][0]
-        $acc = if ($pa.Properties["samaccountname"].Count -gt 0) { $pa.Properties["samaccountname"][0] } else { (& $extractName $dn) }
-        
-        if (-not ($adminList | Where-Object { $_.DistinguishedName -eq $dn })) {
-            $adminList.Add([PSCustomObject]@{
-                "Admin-Gruppe"      = "Domänen-Admins (Primary)"
-                "Account Name"      = $acc
-                "Mitgliedschaft"    = "Primäre Gruppe (ID 512)"
-                "DistinguishedName" = $dn
-            })
-        }
-    }
-
-    $eaGroups = Search-NativeLdap -LdapFilter "(&(objectCategory=group)(|(sAMAccountName=Enterprise Admins)(sAMAccountName=Organisations-Admins)))" -PropertiesToLoad @("name","member")
-    if ($eaGroups -and $eaGroups.Count -gt 0 -and $eaGroups[0].Properties["member"]) {
-        $eaName = $eaGroups[0].Properties["name"][0]
-        foreach ($m in $eaGroups[0].Properties["member"]) {
-            $adminList.Add([PSCustomObject]@{
-                "Admin-Gruppe"      = $eaName
-                "Account Name"      = (& $extractName $m)
-                "Mitgliedschaft"    = "Explizit (member)"
-                "DistinguishedName" = $m
-            })
-        }
-    }
-
-    $saGroups = Search-NativeLdap -LdapFilter "(&(objectCategory=group)(|(sAMAccountName=Schema Admins)(sAMAccountName=Schema-Admins)))" -PropertiesToLoad @("name","member")
-    if ($saGroups -and $saGroups.Count -gt 0 -and $saGroups[0].Properties["member"]) {
-        $saName = $saGroups[0].Properties["name"][0]
-        foreach ($m in $saGroups[0].Properties["member"]) {
-            $adminList.Add([PSCustomObject]@{
-                "Admin-Gruppe"      = $saName
-                "Account Name"      = (& $extractName $m)
-                "Mitgliedschaft"    = "Explizit (member)"
-                "DistinguishedName" = $m
-            })
-        }
-    }
-
-    $arrAdmins = [System.Collections.ArrayList]::new($adminList)
-    $gridAdmins.DataSource = $arrAdmins
-    $lblAdminCount.Text = "Gefundene privilegierte Konten: $($adminList.Count)"
+    $btnRefreshDC.Add_Click({ & $loadDomainData })
 
     $txtAdminFilter.Add_TextChanged({
         $filterText = $txtAdminFilter.Text.Trim().ToLower()
         if ([string]::IsNullOrWhiteSpace($filterText)) {
-            $gridAdmins.DataSource = [System.Collections.ArrayList]::new($adminList)
-            $lblAdminCount.Text = "Gefundene privilegierte Konten: $($adminList.Count)"
+            $gridAdmins.DataSource = [System.Collections.ArrayList]::new($script:adminList)
+            $lblAdminCount.Text = "Gefundene privilegierte Konten: $($script:adminList.Count)"
         } else {
-            $filtered = $adminList | Where-Object {
-                $_."Admin-Gruppe".ToLower().Contains($filterText) -or
-                $_."Account Name".ToLower().Contains($filterText) -or
-                $_."DistinguishedName".ToLower().Contains($filterText)
+            $filtered = $script:adminList | Where-Object {
+                ($_."Admin-Gruppe" -and $_."Admin-Gruppe".ToLower().Contains($filterText)) -or
+                ($_."Account Name" -and $_."Account Name".ToLower().Contains($filterText)) -or
+                ($_."Delegierungsschutz" -and $_."Delegierungsschutz".ToLower().Contains($filterText)) -or
+                ($_."DistinguishedName" -and $_."DistinguishedName".ToLower().Contains($filterText))
             }
             $arrF = [System.Collections.ArrayList]::new()
             foreach ($item in $filtered) { [void]$arrF.Add($item) }
             $gridAdmins.DataSource = $arrF
-            $lblAdminCount.Text = "Gefiltert: $($arrF.Count) von $($adminList.Count)"
+            $lblAdminCount.Text = "Gefiltert: $($arrF.Count) von $($script:adminList.Count)"
         }
+        & $applyAdminFormatting
     })
 
+    $subForm.Add_Shown({ & $loadDomainData })
     [void]$subForm.ShowDialog()
 }
 
 # ==============================================================================
-# TOOL 7: AD SECURITY & OS SUPPORT AUDIT (LETZTSTAND)
+# TOOL 7: AD SECURITY & OS SUPPORT AUDIT
 # ==============================================================================
 function Open-ToolOSSupportAudit {
     if (-not (Assert-DomainJoined)) { return }
@@ -1178,7 +1628,7 @@ function Open-ToolOSSupportAudit {
     $subForm.Text = "Tool 7: AD Security & OS Support Audit"
     $subForm.Size = New-Object System.Drawing.Size(1420, 860)
     $subForm.StartPosition = "CenterParent"
-    $subForm.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $subForm.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
 
     $pnlTop = New-Object System.Windows.Forms.Panel
     $pnlTop.Dock = [System.Windows.Forms.DockStyle]::Top
@@ -1259,7 +1709,7 @@ function Open-ToolOSSupportAudit {
     $gridOSAudit.AllowUserToAddRows = $false
     $gridOSAudit.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::AllCells
     $gridOSAudit.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $gridOSAudit.BackgroundColor = [System.Drawing.Color]::White
+    Apply-StandardGridTheme -Grid $gridOSAudit
     $subForm.Controls.Add($gridOSAudit); $gridOSAudit.BringToFront()
 
     $subForm.Add_Shown({
@@ -1374,7 +1824,7 @@ function Open-ToolOSSupportAudit {
 }
 
 # ==============================================================================
-# TOOL 8: CLIENT SOFTWARE & APP ANALYSE (LAYOUT KORRIGIERT)
+# TOOL 8: CLIENT SOFTWARE & APP ANALYSE
 # ==============================================================================
 function Show-ClientSoftwareAnalysis {
     $subForm = New-Object System.Windows.Forms.Form
@@ -1382,16 +1832,14 @@ function Show-ClientSoftwareAnalysis {
     $subForm.Size = New-Object System.Drawing.Size(1100, 720)
     $subForm.MinimumSize = New-Object System.Drawing.Size(850, 500)
     $subForm.StartPosition = "CenterScreen"
-    $subForm.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $subForm.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
 
-    # 1. Steuerungs- & Filter-Panel (Oben)
     $pnlTop = New-Object System.Windows.Forms.Panel
     $pnlTop.Dock = [System.Windows.Forms.DockStyle]::Top
     $pnlTop.Height = 90
     $pnlTop.Padding = New-Object System.Windows.Forms.Padding(10)
     $subForm.Controls.Add($pnlTop)
 
-    # Suchfeld
     $lblSearch = New-Object System.Windows.Forms.Label
     $lblSearch.Text = "Suche / Search:"
     $lblSearch.Location = New-Object System.Drawing.Point(12, 15)
@@ -1403,7 +1851,6 @@ function Show-ClientSoftwareAnalysis {
     $txtSearch.Size = New-Object System.Drawing.Size(160, 23)
     $pnlTop.Controls.Add($txtSearch)
 
-    # App-Typ Filter
     $lblType = New-Object System.Windows.Forms.Label
     $lblType.Text = "Typ:"
     $lblType.Location = New-Object System.Drawing.Point(290, 15)
@@ -1418,7 +1865,6 @@ function Show-ClientSoftwareAnalysis {
     $cmbType.SelectedIndex = 0
     $pnlTop.Controls.Add($cmbType)
 
-    # Sprach-Filter
     $lblLang = New-Object System.Windows.Forms.Label
     $lblLang.Text = "Sprache:"
     $lblLang.Location = New-Object System.Drawing.Point(460, 15)
@@ -1433,33 +1879,29 @@ function Show-ClientSoftwareAnalysis {
     $cmbLang.SelectedIndex = 0
     $pnlTop.Controls.Add($cmbLang)
 
-    # Scan-Button
     $btnScan = New-Object System.Windows.Forms.Button
-    $btnScan.Text = "Apps einlesen"
+    $btnScan.Text = "Neu laden"
     $btnScan.Location = New-Object System.Drawing.Point(680, 10)
     $btnScan.Size = New-Object System.Drawing.Size(120, 28)
     $btnScan.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
     $btnScan.ForeColor = [System.Drawing.Color]::White
     $btnScan.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btnScan.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $btnScan.Font = New-Object System.Drawing.Font($subForm.Font.FontFamily, 9, [System.Drawing.FontStyle]::Bold)
     $pnlTop.Controls.Add($btnScan)
 
-    # CSV-Export Button
     $btnExport = New-Object System.Windows.Forms.Button
     $btnExport.Text = "CSV Export"
     $btnExport.Location = New-Object System.Drawing.Point(810, 10)
     $btnExport.Size = New-Object System.Drawing.Size(100, 28)
     $pnlTop.Controls.Add($btnExport)
 
-    # Statuszeile
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Location = New-Object System.Drawing.Point(12, 55)
     $lblStatus.Size = New-Object System.Drawing.Size(950, 22)
     $lblStatus.ForeColor = [System.Drawing.Color]::DarkSlateGray
-    $lblStatus.Text = "Klicken Sie auf 'Apps einlesen', um installierte Software zu laden."
+    $lblStatus.Text = "Initialisiere..."
     $pnlTop.Controls.Add($lblStatus)
 
-    # 2. Ergebnistabelle (Unten / Fill)
     $gridApps = New-Object System.Windows.Forms.DataGridView
     $gridApps.Dock = [System.Windows.Forms.DockStyle]::Fill
     $gridApps.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
@@ -1467,17 +1909,14 @@ function Show-ClientSoftwareAnalysis {
     $gridApps.ReadOnly = $true
     $gridApps.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
     $gridApps.MultiSelect = $false
-    $gridApps.BackgroundColor = [System.Drawing.Color]::White
-    $gridApps.RowHeadersVisible = $false
+    Apply-StandardGridTheme -Grid $gridApps -EnableAlternatingRowColor
     $subForm.Controls.Add($gridApps)
 
-    # WICHTIG: Z-Order festlegen, damit die Tabelle NICHT unter das Top-Panel rutscht
     $gridApps.BringToFront()
     $pnlTop.SendToBack()
 
     $global:allInstalledApps = @()
 
-    # Filter-Funktion
     $applyFilter = {
         if (-not $global:allInstalledApps) { return }
         $searchPattern = if ([string]::IsNullOrWhiteSpace($txtSearch.Text)) { "*" } else { "*$($txtSearch.Text.Trim())*" }
@@ -1501,7 +1940,6 @@ function Show-ClientSoftwareAnalysis {
         $lblStatus.Text = "Gefiltert: $($arr.Count) von $($global:allInstalledApps.Count) Programmen & Apps angezeigt."
     }
 
-    # Auslese-Logik
     $btnScan.Add_Click({
         $lblStatus.Text = "Lese Registry und Store-Pakete aus..."
         $subForm.Refresh()
@@ -1534,12 +1972,10 @@ function Show-ClientSoftwareAnalysis {
         }
     })
 
-    # Event-Bindings für Filter
     $txtSearch.Add_TextChanged({ & $applyFilter })
     $cmbType.Add_SelectedIndexChanged({ & $applyFilter })
     $cmbLang.Add_SelectedIndexChanged({ & $applyFilter })
 
-    # Export
     $btnExport.Add_Click({
         if (-not $gridApps.DataSource -or $gridApps.Rows.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show("Keine Daten zum Exportieren vorhanden.", "Export", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
@@ -1554,23 +1990,27 @@ function Show-ClientSoftwareAnalysis {
         }
     })
 
+    $subForm.Add_Shown({
+        $btnScan.PerformClick()
+    })
+
     [void]$subForm.ShowDialog()
 }
 
 # ==============================================================================
-# TOOL 9: AD UNIVERSAL ACL & BERECHTIGUNGSVERGLEICH (LETZTSTAND)
+# TOOL 9: AD UNIVERSAL ACL & BERECHTIGUNGSVERGLEICH
 # ==============================================================================
 function Show-Tool9-ACLCompare {
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Tool 9: Active Directory Universal ACL & Berechtigungsvergleich"
     $form.Size = New-Object System.Drawing.Size(1280, 800)
     $form.StartPosition = "CenterScreen"
-    $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $form.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
     $form.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
     $lblTitle = New-Object System.Windows.Forms.Label
     $lblTitle.Text = "AD Objekt ACL-Vergleich (User, Gruppen, Computer, OUs & Berechtigungs-Diff)"
-    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.Font = New-Object System.Drawing.Font($form.Font.FontFamily, 12, [System.Drawing.FontStyle]::Bold)
     $lblTitle.Location = "15, 12"; $lblTitle.Size = "850, 25"; $form.Controls.Add($lblTitle)
 
     $grpInputs = New-Object System.Windows.Forms.GroupBox
@@ -1611,27 +2051,26 @@ function Show-Tool9-ACLCompare {
     $btnCompare = New-Object System.Windows.Forms.Button
     $btnCompare.Text = "ACLs Vergleichen"; $btnCompare.Location = "760, 22"; $btnCompare.Size = "160, 80"
     $btnCompare.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215); $btnCompare.ForeColor = [System.Drawing.Color]::White
-    $btnCompare.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $btnCompare.Font = New-Object System.Drawing.Font($form.Font.FontFamily, 10, [System.Drawing.FontStyle]::Bold)
     $grpInputs.Controls.Add($btnCompare)
 
     $btnExport = New-Object System.Windows.Forms.Button
     $btnExport.Text = "CSV Exportieren"; $btnExport.Location = "935, 22"; $btnExport.Size = "140, 80"
     $btnExport.BackColor = [System.Drawing.Color]::FromArgb(40, 167, 69); $btnExport.ForeColor = [System.Drawing.Color]::White
-    $btnExport.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
+    $btnExport.Font = New-Object System.Drawing.Font($form.Font.FontFamily, 9.5, [System.Drawing.FontStyle]::Bold)
     $grpInputs.Controls.Add($btnExport)
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Text = "Geben Sie Namen, sAMAccountNames oder DNs zweier AD-Objekte ein."; $lblStatus.Location = "15, 165"; $lblStatus.Size = "1230, 24"
-    $lblStatus.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
+    $lblStatus.Font = New-Object System.Drawing.Font($form.Font.FontFamily, 9, [System.Drawing.FontStyle]::Italic)
     $form.Controls.Add($lblStatus)
 
     $gridACL = New-Object System.Windows.Forms.DataGridView
     $gridACL.Location = "15, 195"; $gridACL.Size = "1230, 550"
     $gridACL.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $gridACL.ReadOnly = $true; $gridACL.AllowUserToAddRows = $false
-    $gridACL.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::DisplayedCells
-    $gridACL.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $gridACL.BackgroundColor = [System.Drawing.Color]::White
+    $gridACL.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    Apply-StandardGridTheme -Grid $gridACL
     $form.Controls.Add($gridACL)
 
     $global:ComparisonResults = @()
@@ -1707,6 +2146,14 @@ function Show-Tool9-ACLCompare {
         foreach ($f in $filtered) { [void]$arrList.Add($f) }
         $gridACL.DataSource = $null
         $gridACL.DataSource = $arrList
+
+        if ($gridACL.Columns["Vergleichs-Status"])  { $gridACL.Columns["Vergleichs-Status"].FillWeight  = 110 }
+        if ($gridACL.Columns["Principal / Gruppe"]) { $gridACL.Columns["Principal / Gruppe"].FillWeight = 130 }
+        if ($gridACL.Columns["Rechte (Objekt 1)"])  { $gridACL.Columns["Rechte (Objekt 1)"].FillWeight  = 160 }
+        if ($gridACL.Columns["Rechte (Objekt 2)"])  { $gridACL.Columns["Rechte (Objekt 2)"].FillWeight  = 160 }
+        if ($gridACL.Columns["Typ"])                { $gridACL.Columns["Typ"].FillWeight                = 70 }
+        if ($gridACL.Columns["Objekt 1 Vererbt"])   { $gridACL.Columns["Objekt 1 Vererbt"].FillWeight   = 85 }
+        if ($gridACL.Columns["Objekt 2 Vererbt"])   { $gridACL.Columns["Objekt 2 Vererbt"].FillWeight   = 85 }
 
         foreach ($row in $gridACL.Rows) {
             $statusVal = $row.Cells["Vergleichs-Status"].Value
@@ -1790,7 +2237,7 @@ function Show-Tool9-ACLCompare {
                                 "Vergleichs-Status"  = "Abweichende Rechte"
                                 "Principal / Gruppe" = $r1.IdentityReference
                                 "Rechte (Objekt 1)"  = $r1.Rights
-                                "Rechte (Objekt 2)"  = "(Abweichend/Nicht gleich)"
+                                "Rechte (Objekt 2)"  = ($r2List.Rights -join ", ")
                                 "Typ"                = $r1.AccessControlType
                                 "Objekt 1 Vererbt"   = if ($r1.IsInherited) { "Ja" } else { "Nein (Explizit)" }
                                 "Objekt 2 Vererbt"   = "-"
@@ -1803,7 +2250,7 @@ function Show-Tool9-ACLCompare {
                             $comparisonList.Add([PSCustomObject]@{
                                 "Vergleichs-Status"  = "Abweichende Rechte"
                                 "Principal / Gruppe" = $r2.IdentityReference
-                                "Rechte (Objekt 1)"  = "(Abweichend/Nicht gleich)"
+                                "Rechte (Objekt 1)"  = ($r1List.Rights -join ", ")
                                 "Rechte (Objekt 2)"  = $r2.Rights
                                 "Typ"                = $r2.AccessControlType
                                 "Objekt 1 Vererbt"   = "-"
@@ -1838,7 +2285,7 @@ function Show-Tool9-ACLCompare {
         $sfd.FileName = "AD_ACL_Vergleich_$($txtComp1.Text)_vs_$($txtComp2.Text)_$((Get-Date).ToString('yyyyMMdd_HHmm')).csv"
         if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $gridACL.DataSource | Export-Csv -Path $sfd.FileName -NoTypeInformation -Delimiter ";" -Encoding UTF8
-            [System.Windows.Forms.MessageBox]::Show("ACL-Vergleich erfolgreich exportiert nach:`n$($sfd.FileName)", "Export Abgeschlossen", "OK", "Information")
+            [System.Windows.Forms.MessageBox]::Show("ACL-Vergleich erfolgreich exportiert nach:`n$($sfd.FileName)", "Export Abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
     })
 
@@ -1846,236 +2293,207 @@ function Show-Tool9-ACLCompare {
 }
 
 # ==============================================================================
-# TOOL 11: AD KENNWORT-RICHTLINIEN & PSO AUDIT (LAYOUT & PSO FIX)
+# TOOL 11: AD KENNWORT-RICHTLINIEN & PSO AUDIT (VOLLSTÄNDIGER TOP-BAR & GRID FIX)
 # ==============================================================================
-function Open-ToolPasswordPolicies {
+function Show-Tool11-PasswordPolicies {
     if (-not (Assert-DomainJoined)) { return }
 
     $t = $script:I18N[$script:CurrentLang]
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = $t["Tool11Title"]
-    $form.Size = New-Object System.Drawing.Size(1150, 720)
+    $form.Size = New-Object System.Drawing.Size(1150, 750)
     $form.StartPosition = "CenterParent"
-    $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $form.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
     $form.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
-    # Header Panel
-    $headerPanel = New-Object System.Windows.Forms.Panel
-    $headerPanel.Dock = "Top"
-    $headerPanel.Height = 60
-    $headerPanel.BackColor = [System.Drawing.Color]::White
-    $form.Controls.Add($headerPanel)
-
-    $lblTitle = New-Object System.Windows.Forms.Label
-    $lblTitle.Text = $t["Tool11Title"]
-    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
-    $lblTitle.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
-    $lblTitle.Location = New-Object System.Drawing.Point(20, 8)
-    $lblTitle.AutoSize = $true
-    $headerPanel.Controls.Add($lblTitle)
-
-    $lblSubTitle = New-Object System.Windows.Forms.Label
-    $lblSubTitle.Text = $t["Tool11Sub"]
-    $lblSubTitle.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
-    $lblSubTitle.Location = New-Object System.Drawing.Point(22, 33)
-    $lblSubTitle.AutoSize = $true
-    $headerPanel.Controls.Add($lblSubTitle)
-
-    # Bottom Panel
-    $bottomPanel = New-Object System.Windows.Forms.Panel
-    $bottomPanel.Dock = "Bottom"
-    $bottomPanel.Height = 50
-    $bottomPanel.BackColor = [System.Drawing.Color]::White
-    $form.Controls.Add($bottomPanel)
-
-    $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(20, 15)
-    $lblStatus.AutoSize = $true
-    $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(71, 85, 105)
-    $lblStatus.Text = $t["StatusReady"]
-    $bottomPanel.Controls.Add($lblStatus)
-
-    $btnExport = New-Object System.Windows.Forms.Button
-    $btnExport.Text = $t["BtnExportCsv"]
-    $btnExport.Size = New-Object System.Drawing.Size(130, 30)
-    $btnExport.Location = New-Object System.Drawing.Point(830, 10)
-    $btnExport.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-    $btnExport.BackColor = [System.Drawing.Color]::FromArgb(37, 99, 235)
-    $btnExport.ForeColor = [System.Drawing.Color]::White
-    $btnExport.FlatStyle = "Flat"
-    $btnExport.FlatAppearance.BorderSize = 0
-    $bottomPanel.Controls.Add($btnExport)
+    # 1. Fest verankerte obere Aktionsleiste (Top-Panel)
+    $pnlTop = New-Object System.Windows.Forms.Panel
+    $pnlTop.Dock = [System.Windows.Forms.DockStyle]::Top
+    $pnlTop.Height = 48
+    $pnlTop.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
     $btnRefresh = New-Object System.Windows.Forms.Button
     $btnRefresh.Text = $t["BtnRefresh"]
-    $btnRefresh.Size = New-Object System.Drawing.Size(130, 30)
-    $btnRefresh.Location = New-Object System.Drawing.Point(970, 10)
-    $btnRefresh.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-    $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    $btnRefresh.Location = New-Object System.Drawing.Point(12, 10)
+    $btnRefresh.Size = New-Object System.Drawing.Size(120, 28)
+    $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
     $btnRefresh.ForeColor = [System.Drawing.Color]::White
-    $btnRefresh.FlatStyle = "Flat"
-    $btnRefresh.FlatAppearance.BorderSize = 0
-    $bottomPanel.Controls.Add($btnRefresh)
+    $btnRefresh.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnRefresh.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9, [System.Drawing.FontStyle]::Bold)
 
-    # Tab Control
+    $btnExport = New-Object System.Windows.Forms.Button
+    $btnExport.Text = $t["BtnExportCsv"]
+    $btnExport.Location = New-Object System.Drawing.Point(140, 10)
+    $btnExport.Size = New-Object System.Drawing.Size(120, 28)
+    $btnExport.BackColor = [System.Drawing.Color]::White
+    $btnExport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Location = New-Object System.Drawing.Point(275, 15)
+    $lblStatus.AutoSize = $true
+    $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(50, 70, 90)
+    $lblStatus.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9.0, [System.Drawing.FontStyle]::Bold)
+    $lblStatus.Text = $t["StatusReady"]
+
+    $pnlTop.Controls.AddRange(@($btnRefresh, $btnExport, $lblStatus))
+
+    # 2. TabControl
     $tabControl = New-Object System.Windows.Forms.TabControl
-    $tabControl.Dock = "Fill"
+    $tabControl.Dock = [System.Windows.Forms.DockStyle]::Fill
     $tabControl.Padding = New-Object System.Drawing.Point(12, 6)
-    $form.Controls.Add($tabControl)
-    $tabControl.BringToFront()
 
-    # --- TAB 1: Default Domain Password Policy ---
+    # --- TAB 1: Standard Domänen-Kennwortrichtlinie ---
     $tabDomain = New-Object System.Windows.Forms.TabPage
     $tabDomain.Text = $t["TabDefaultPolicy"]
     $tabDomain.BackColor = [System.Drawing.Color]::White
-    $tabControl.TabPages.Add($tabDomain)
+    $tabDomain.Padding = New-Object System.Windows.Forms.Padding(6)
 
     $gridDomain = New-Object System.Windows.Forms.DataGridView
-    $gridDomain.Dock = "Fill"
-    $gridDomain.BackgroundColor = [System.Drawing.Color]::White
-    $gridDomain.BorderStyle = "None"
-    $gridDomain.ReadOnly = $true
-    $gridDomain.AllowUserToAddRows = $false
-    $gridDomain.SelectionMode = "FullRowSelect"
-    $gridDomain.AutoSizeColumnsMode = "AllCells"
+    $gridDomain.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $gridDomain.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    Apply-StandardGridTheme -Grid $gridDomain -EnableAlternatingRowColor
     $tabDomain.Controls.Add($gridDomain)
 
-    # --- TAB 2: Fine-Grained PSOs ---
+    # --- TAB 2: Fine-Grained PSOs & Diagnose ---
     $tabPSO = New-Object System.Windows.Forms.TabPage
     $tabPSO.Text = $t["TabFineGrained"]
     $tabPSO.BackColor = [System.Drawing.Color]::White
-    $tabControl.TabPages.Add($tabPSO)
+    $tabPSO.Padding = New-Object System.Windows.Forms.Padding(6)
+
+    $pnlDiag = New-Object System.Windows.Forms.Panel
+    $pnlDiag.Dock = [System.Windows.Forms.DockStyle]::Bottom
+    $pnlDiag.Height = 150
+    $pnlDiag.BackColor = [System.Drawing.Color]::FromArgb(254, 242, 242)
+    $pnlDiag.Visible = $false
+    $tabPSO.Controls.Add($pnlDiag)
+
+    $lblDiagTitle = New-Object System.Windows.Forms.Label
+    $lblDiagTitle.Location = New-Object System.Drawing.Point(15, 10)
+    $lblDiagTitle.Size = New-Object System.Drawing.Size(900, 20)
+    $lblDiagTitle.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9.5, [System.Drawing.FontStyle]::Bold)
+    $lblDiagTitle.ForeColor = [System.Drawing.Color]::FromArgb(153, 27, 27)
+    $pnlDiag.Controls.Add($lblDiagTitle)
+
+    $txtDiagDetails = New-Object System.Windows.Forms.TextBox
+    $txtDiagDetails.Location = New-Object System.Drawing.Point(15, 33)
+    $txtDiagDetails.Size = New-Object System.Drawing.Size(850, 70)
+    $txtDiagDetails.Multiline = $true
+    $txtDiagDetails.ReadOnly = $true
+    $txtDiagDetails.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $txtDiagDetails.BackColor = [System.Drawing.Color]::White
+    $txtDiagDetails.ScrollBars = "Vertical"
+    $pnlDiag.Controls.Add($txtDiagDetails)
+
+    $btnFixACL = New-Object System.Windows.Forms.Button
+    $btnFixACL.Location = New-Object System.Drawing.Point(15, 109)
+    $btnFixACL.Size = New-Object System.Drawing.Size(260, 28)
+    $btnFixACL.Text = if ($script:CurrentLang -eq "DE") { "🛡️ Leserecht jetzt delegieren (DC)" } else { "🛡️ Delegate Read Permission (DC)" }
+    $btnFixACL.BackColor = [System.Drawing.Color]::FromArgb(185, 28, 28)
+    $btnFixACL.ForeColor = [System.Drawing.Color]::White
+    $btnFixACL.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $pnlDiag.Controls.Add($btnFixACL)
+
+    $btnCopyCmd = New-Object System.Windows.Forms.Button
+    $btnCopyCmd.Location = New-Object System.Drawing.Point(285, 109)
+    $btnCopyCmd.Size = New-Object System.Drawing.Size(220, 28)
+    $btnCopyCmd.Text = if ($script:CurrentLang -eq "DE") { "📋 dsacls Befehl kopieren" } else { "📋 Copy dsacls Command" }
+    $btnCopyCmd.BackColor = [System.Drawing.Color]::FromArgb(71, 85, 105)
+    $btnCopyCmd.ForeColor = [System.Drawing.Color]::White
+    $btnCopyCmd.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $pnlDiag.Controls.Add($btnCopyCmd)
 
     $gridPSO = New-Object System.Windows.Forms.DataGridView
-    $gridPSO.Dock = "Fill"
-    $gridPSO.BackgroundColor = [System.Drawing.Color]::White
-    $gridPSO.BorderStyle = "None"
-    $gridPSO.ReadOnly = $true
-    $gridPSO.AllowUserToAddRows = $false
-    $gridPSO.SelectionMode = "FullRowSelect"
-    $gridPSO.AutoSizeColumnsMode = "AllCells"
+    $gridPSO.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $gridPSO.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    Apply-StandardGridTheme -Grid $gridPSO -EnableAlternatingRowColor
     $tabPSO.Controls.Add($gridPSO)
+    $gridPSO.BringToFront()
 
     # --- TAB 3: User Effective Policy Check ---
     $tabUser = New-Object System.Windows.Forms.TabPage
     $tabUser.Text = $t["TabUserCheck"]
     $tabUser.BackColor = [System.Drawing.Color]::White
-    $tabControl.TabPages.Add($tabUser)
+    $tabUser.Padding = New-Object System.Windows.Forms.Padding(6)
 
     $userTopPanel = New-Object System.Windows.Forms.Panel
-    $userTopPanel.Dock = "Top"
-    $userTopPanel.Height = 55
+    $userTopPanel.Dock = [System.Windows.Forms.DockStyle]::Top
+    $userTopPanel.Height = 52
     $userTopPanel.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 252)
-    $tabUser.Controls.Add($userTopPanel)
 
     $lblUser = New-Object System.Windows.Forms.Label
     $lblUser.Text = $t["UserSearchLabel"]
-    $lblUser.Location = New-Object System.Drawing.Point(15, 18)
+    $lblUser.Location = New-Object System.Drawing.Point(12, 16)
     $lblUser.AutoSize = $true
-    $lblUser.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblUser.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9, [System.Drawing.FontStyle]::Bold)
     $userTopPanel.Controls.Add($lblUser)
 
-    # FIX: Position nach rechts gerückt (X=320), damit das deutsche Label nicht überlappt
     $txtUserCheck = New-Object System.Windows.Forms.TextBox
-    $txtUserCheck.Location = New-Object System.Drawing.Point(320, 14)
-    $txtUserCheck.Size = New-Object System.Drawing.Size(200, 25)
+    $txtUserCheck.Location = New-Object System.Drawing.Point(310, 13)
+    $txtUserCheck.Size = New-Object System.Drawing.Size(200, 24)
+    $txtUserCheck.Text = $env:USERNAME
     $userTopPanel.Controls.Add($txtUserCheck)
 
     $btnCheckUser = New-Object System.Windows.Forms.Button
     $btnCheckUser.Text = $t["BtnCheckUser"]
-    $btnCheckUser.Location = New-Object System.Drawing.Point(530, 13)
-    $btnCheckUser.Size = New-Object System.Drawing.Size(150, 27)
-    $btnCheckUser.BackColor = [System.Drawing.Color]::FromArgb(15, 118, 110)
+    $btnCheckUser.Location = New-Object System.Drawing.Point(520, 11)
+    $btnCheckUser.Size = New-Object System.Drawing.Size(210, 28)
+    $btnCheckUser.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
     $btnCheckUser.ForeColor = [System.Drawing.Color]::White
-    $btnCheckUser.FlatStyle = "Flat"
-    $btnCheckUser.FlatAppearance.BorderSize = 0
+    $btnCheckUser.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $userTopPanel.Controls.Add($btnCheckUser)
 
     $gridUserPolicy = New-Object System.Windows.Forms.DataGridView
-    $gridUserPolicy.Dock = "Fill"
-    $gridUserPolicy.BackgroundColor = [System.Drawing.Color]::White
-    $gridUserPolicy.BorderStyle = "None"
-    $gridUserPolicy.ReadOnly = $true
-    $gridUserPolicy.AllowUserToAddRows = $false
-    $gridUserPolicy.SelectionMode = "FullRowSelect"
-    $gridUserPolicy.AutoSizeColumnsMode = "AllCells"
+    $gridUserPolicy.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $gridUserPolicy.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    Apply-StandardGridTheme -Grid $gridUserPolicy -EnableAlternatingRowColor
+
     $tabUser.Controls.Add($gridUserPolicy)
+    $tabUser.Controls.Add($userTopPanel)
+    $userTopPanel.SendToBack()
     $gridUserPolicy.BringToFront()
 
-    # Helper: Convert I8 / Large Integer FileTime Duration to Minutes/Days/Hours
-    $convertTimeSpan = {
-        param($val, $asDays = $false)
-        if (-not $val) { return if ($script:CurrentLang -eq "DE") { "Nicht konfiguriert" } else { "Not Configured" } }
-        try {
-            $ticks = 0
-            if ($val -is [System.Int64]) {
-                $ticks = $val
-            } elseif ($val.GetType().Name -eq "__ComObject" -or $val.GetType().FullName -like "*LargeInteger*") {
-                $ticks = ([int64]$val.HighPart -shl 32) + [int64]$val.LowPart
-            } else {
-                $ticks = [int64]::Parse($val.ToString())
-            }
+    $tabControl.TabPages.AddRange(@($tabDomain, $tabPSO, $tabUser))
 
-            if ($ticks -eq 0 -or $ticks -eq [Int64]::MinValue) {
-                return if ($script:CurrentLang -eq "DE") { "Nie ablaufend / Deaktiviert" } else { "Never Expires / Disabled" }
-            }
-
-            # Negative FileTime Ticks: 1 Tick = 100 Nanosekunden
-            if ($ticks -lt 0) { $ticks = -$ticks }
-            $ts = [TimeSpan]::FromTicks($ticks)
-
-            if ($asDays) {
-                if ($ts.TotalDays -ge 1) {
-                    $unit = if ($script:CurrentLang -eq "DE") { "Tage" } else { "Days" }
-                    return "{0:N1} $unit" -f $ts.TotalDays
-                } else {
-                    $unit = if ($script:CurrentLang -eq "DE") { "Stunden" } else { "Hours" }
-                    return "{0:N1} $unit" -f $ts.TotalHours
-                }
-            } else {
-                if ($ts.TotalMinutes -ge 60) {
-                    $unit = if ($script:CurrentLang -eq "DE") { "Stunden" } else { "Hours" }
-                    return "{0:N1} $unit" -f $ts.TotalHours
-                } else {
-                    $unit = if ($script:CurrentLang -eq "DE") { "Minuten" } else { "Minutes" }
-                    return "{0:N0} $unit" -f $ts.TotalMinutes
-                }
-            }
-        } catch {
-            return $val.ToString()
-        }
-    }
+    # Controls zum Formular hinzufügen
+    $form.Controls.Add($tabControl)
+    $form.Controls.Add($pnlTop)
+    $pnlTop.SendToBack()
+    $tabControl.BringToFront()
 
     $script:cachedDomainPolicies = @()
     $script:cachedPSOs = @()
     $script:cachedUserPolicy = @()
+    $script:currentPsoPath = ""
+    $script:dsaclsCmd = ""
 
-    # --- LADE-LOGIK ---
     $loadPolicies = {
         $lblStatus.Text = $t["StatusSearching"]
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $pnlDiag.Visible = $false
         $script:cachedDomainPolicies = @()
         $script:cachedPSOs = @()
 
         try {
-            # 1. Standard Domain Password Policy
-            $rootEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://RootDSE")
-            $defNamingContext = $rootEntry.defaultNamingContext.ToString()
-            $domEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$defNamingContext")
+            $domDN = Get-DomainDN
+            if (-not $domDN) { throw "Domain DN konnte nicht ermittelt werden." }
+            $domEntry = [ADSI]"LDAP://$domDN"
 
-            $minPwdAge      = & $convertTimeSpan $domEntry.Properties["minPwdAge"].Value $true
-            $maxPwdAge      = & $convertTimeSpan $domEntry.Properties["maxPwdAge"].Value $true
-            $minPwdLength   = if ($domEntry.Properties["minPwdLength"].Value) { "$($domEntry.Properties['minPwdLength'].Value) " + (if ($script:CurrentLang -eq "DE") { "Zeichen" } else { "Characters" }) } else { "0" }
-            $pwdHistory     = if ($domEntry.Properties["pwdHistoryLength"].Value) { "$($domEntry.Properties['pwdHistoryLength'].Value) " + (if ($script:CurrentLang -eq "DE") { "Kennwörter gespeichert" } else { "Passwords remembered" }) } else { "0" }
+            $script:currentPsoPath = "CN=Password Settings Objects,CN=System,$domDN"
+            $script:dsaclsCmd = "dsacls `"$($script:currentPsoPath)`" /I:T /G `"Authenticated Users:GR`""
+
+            $minPwdAge      = Convert-LargeIntToTimeSpan $domEntry.minPwdAge[0] $true
+            $maxPwdAge      = Convert-LargeIntToTimeSpan $domEntry.maxPwdAge[0] $true
+            $minPwdLength   = if ($domEntry.minPwdLength.Value) { "$($domEntry.minPwdLength.Value) " + (if ($script:CurrentLang -eq "DE") { "Zeichen" } else { "Characters" }) } else { "0" }
+            $pwdHistory     = if ($domEntry.pwdHistoryLength.Value) { "$($domEntry.pwdHistoryLength.Value) " + (if ($script:CurrentLang -eq "DE") { "Kennwörter" } else { "Passwords" }) } else { "0" }
             
-            $pwdProps = [int]($domEntry.Properties["pwdProperties"].Value)
+            $pwdProps = [int]($domEntry.pwdProperties[0])
             $complexityEnabled = ($pwdProps -band 1) -eq 1
             $reversibleEnc     = ($pwdProps -band 16) -eq 16
 
-            $lockThreshold = if ($domEntry.Properties["lockoutThreshold"].Value) { "$($domEntry.Properties['lockoutThreshold'].Value) " + (if ($script:CurrentLang -eq "DE") { "ungültige Versuche" } else { "Invalid attempts" }) } else { if ($script:CurrentLang -eq "DE") { "0 (Deaktiviert)" } else { "0 (Disabled)" } }
-            $lockDuration  = & $convertTimeSpan $domEntry.Properties["lockoutDuration"].Value $false
-            $lockWindow    = & $convertTimeSpan $domEntry.Properties["lockOutObservationWindow"].Value $false
+            $lockThreshold = if ($domEntry.lockoutThreshold.Value) { "$($domEntry.lockoutThreshold.Value) " + (if ($script:CurrentLang -eq "DE") { "ungültige Versuche" } else { "Invalid attempts" }) } else { if ($script:CurrentLang -eq "DE") { "0 (Deaktiviert)" } else { "0 (Disabled)" } }
+            $lockDuration  = Convert-LargeIntToTimeSpan $domEntry.lockoutDuration[0] $false
+            $lockWindow    = Convert-LargeIntToTimeSpan $domEntry.lockOutObservationWindow[0] $false
 
             $domList = @(
                 [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"]; $t["PropName"] = $t["PropMinAge"]; $t["PropValue"] = $minPwdAge },
@@ -2092,56 +2510,49 @@ function Open-ToolPasswordPolicies {
             $script:cachedDomainPolicies = $domList
             $gridDomain.DataSource = [System.Collections.ArrayList]::new($domList)
 
-            # 2. Fine-Grained Password Policies (PSO) FIX: Direkte Container-Suche + Globaler Fallback
+            if ($gridDomain.Columns[$t["PropCategory"]]) { $gridDomain.Columns[$t["PropCategory"]].FillWeight = 25 }
+            if ($gridDomain.Columns[$t["PropName"]])     { $gridDomain.Columns[$t["PropName"]].FillWeight     = 45 }
+            if ($gridDomain.Columns[$t["PropValue"]])    { $gridDomain.Columns[$t["PropValue"]].FillWeight    = 30 }
+
+            # 2. PSO Abfrage
             $psoList = @()
-            $psoContainerPath = "LDAP://CN=Password Settings Objects,CN=System,$defNamingContext"
-            $psoSearcher = $null
+            $psoSearcher = [System.DirectoryServices.DirectorySearcher]::new($domEntry)
+            $psoSearcher.Filter = "(objectClass=msDS-PasswordSettings)"
+            $psoSearcher.SearchScope = [System.DirectoryServices.SearchScope]::Subtree
+            $psoSearcher.PageSize = 200
             
-            try {
-                $psoEntry = [System.DirectoryServices.DirectoryEntry]::new($psoContainerPath)
-                $psoSearcher = [System.DirectoryServices.DirectorySearcher]::new($psoEntry)
-                $psoSearcher.Filter = "(objectClass=msDS-PasswordSettings)"
-                $psoSearcher.SearchScope = [System.DirectoryServices.SearchScope]::OneLevel
-                $psoResults = $psoSearcher.FindAll()
-            } catch {
-                # Fallback: Subtree Suche im gesamten Domänen-Root
-                $psoSearcher = [System.DirectoryServices.DirectorySearcher]::new($domEntry)
-                $psoSearcher.Filter = "(objectClass=msDS-PasswordSettings)"
-                $psoSearcher.SearchScope = [System.DirectoryServices.SearchScope]::Subtree
-                $psoResults = $psoSearcher.FindAll()
-            }
+            $psoPropsToLoad = @("name", "msDS-PasswordSettingsPrecedence", "msDS-MinimumPasswordLength", "msDS-PasswordHistoryLength", "msDS-PasswordComplexityEnabled", "msDS-MinPasswordAge", "msDS-MaxPasswordAge", "msDS-LockoutThreshold", "msDS-LockoutDuration", "msDS-PSOAppliesTo")
+            foreach ($pr in $psoPropsToLoad) { [void]$psoSearcher.PropertiesToLoad.Add($pr) }
+
+            $psoResults = $psoSearcher.FindAll()
 
             if ($psoResults -and $psoResults.Count -gt 0) {
                 foreach ($res in $psoResults) {
-                    $prop = $res.Properties
-                    $name = if ($prop["name"].Count -gt 0) { $prop["name"][0] } else { "Unbenannt" }
-                    $prec = if ($prop["msds-passwordsettingsprecedence"].Count -gt 0) { $prop["msds-passwordsettingsprecedence"][0] } else { "N/A" }
-                    $pMinLen = if ($prop["msds-minimumpasswordlength"].Count -gt 0) { "$($prop['msds-minimumpasswordlength'][0]) " + (if ($script:CurrentLang -eq "DE") { "Zeichen" } else { "Characters" }) } else { "N/A" }
-                    $pHist = if ($prop["msds-passwordhistorylength"].Count -gt 0) { "$($prop['msds-passwordhistorylength'][0])" } else { "0" }
-                    $pCompl = if ($prop["msds-passwordcomplexityenabled"].Count -gt 0) { [bool]$prop["msds-passwordcomplexityenabled"][0] } else { $false }
-                    $pRevers = if ($prop["msds-passwordreversibleencryptionenabled"].Count -gt 0) { [bool]$prop["msds-passwordreversibleencryptionenabled"][0] } else { $false }
-                    
-                    $pMinAge = if ($prop["msds-minpasswordage"].Count -gt 0) { & $convertTimeSpan $prop["msds-minpasswordage"][0] $true } else { "N/A" }
-                    $pMaxAge = if ($prop["msds-maxpasswordage"].Count -gt 0) { & $convertTimeSpan $prop["msds-maxpasswordage"][0] $true } else { "N/A" }
-                    
-                    $pLockThresh = if ($prop["msds-lockoutthreshold"].Count -gt 0) { "$($prop['msds-lockoutthreshold'][0]) " + (if ($script:CurrentLang -eq "DE") { "Versuche" } else { "Attempts" }) } else { "0" }
-                    $pLockDur = if ($prop["msds-lockoutduration"].Count -gt 0) { & $convertTimeSpan $prop["msds-lockoutduration"][0] $false } else { "N/A" }
-                    $pLockObs = if ($prop["msds-lockoutobservationwindow"].Count -gt 0) { & $convertTimeSpan $prop["msds-lockoutobservationwindow"][0] $false } else { "N/A" }
+                    $entry = $res.GetDirectoryEntry()
+                    $name    = if ($entry.Properties["name"].Value) { $entry.Properties["name"].Value } else { "Unbenannt" }
+                    $prec    = if ($entry.Properties["msDS-PasswordSettingsPrecedence"].Value) { $entry.Properties["msDS-PasswordSettingsPrecedence"].Value } else { "N/A" }
+                    $pMinLen = if ($entry.Properties["msDS-MinimumPasswordLength"].Value) { "$($entry.Properties['msDS-MinimumPasswordLength'].Value) " + (if ($script:CurrentLang -eq "DE") { "Zeichen" } else { "Characters" }) } else { "N/A" }
+                    $pHist   = if ($entry.Properties["msDS-PasswordHistoryLength"].Value) { "$($entry.Properties['msDS-PasswordHistoryLength'].Value)" } else { "0" }
+                    $pCompl  = if ([bool]$entry.Properties["msDS-PasswordComplexityEnabled"].Value) { $t["ValActive"] } else { $t["ValDisabled"] }
+                    $pMinAge = Convert-LargeIntToTimeSpan $entry.Properties["msDS-MinPasswordAge"].Value $true
+                    $pMaxAge = Convert-LargeIntToTimeSpan $entry.Properties["msDS-MaxPasswordAge"].Value $true
+                    $pLockThresh = if ($entry.Properties["msDS-LockoutThreshold"].Value) { "$($entry.Properties['msDS-LockoutThreshold'].Value) " + (if ($script:CurrentLang -eq "DE") { "Versuche" } else { "Attempts" }) } else { "0" }
+                    $pLockDur    = Convert-LargeIntToTimeSpan $entry.Properties["msDS-LockoutDuration"].Value $false
 
                     $appliesTo = @()
-                    if ($prop["msds-psoappliesto"].Count -gt 0) {
-                        foreach ($appDn in $prop["msds-psoappliesto"]) {
+                    if ($entry.Properties["msDS-PSOAppliesTo"]) {
+                        foreach ($appDn in $entry.Properties["msDS-PSOAppliesTo"]) {
                             if ($appDn -match "CN=([^,]+)") { $appliesTo += $Matches[1] } else { $appliesTo += $appDn }
                         }
                     }
-                    $appliesToStr = if ($appliesTo.Count -gt 0) { $appliesTo -join ", " } else { if ($script:CurrentLang -eq "DE") { "Niemand (Keine Zuweisung)" } else { "None (No assignment)" } }
+                    $appliesToStr = if ($appliesTo.Count -gt 0) { $appliesTo -join ", " } else { if ($script:CurrentLang -eq "DE") { "Niemand (Keine Zuweisung)" } else { "None" } }
 
                     $psoList += [PSCustomObject]@{
                         $t["PsoName"]        = $name
                         $t["PsoPrecedence"]  = $prec
                         $t["PsoMinLength"]   = $pMinLen
                         $t["PsoHistory"]     = $pHist
-                        $t["PsoComplexity"]  = if ($pCompl) { $t["ValActive"] } else { $t["ValDisabled"] }
+                        $t["PsoComplexity"]  = $pCompl
                         $t["PsoMinAge"]      = $pMinAge
                         $t["PsoMaxAge"]      = $pMaxAge
                         $t["PsoThreshold"]   = $pLockThresh
@@ -2154,9 +2565,60 @@ function Open-ToolPasswordPolicies {
             $script:cachedPSOs = $psoList
             $gridPSO.DataSource = [System.Collections.ArrayList]::new($psoList)
 
-            $psoCount = $psoList.Count
-            $psoMsg = if ($script:CurrentLang -eq "DE") { "$psoCount Fine-Grained PSO(s) gefunden." } else { "$psoCount Fine-Grained PSO(s) found." }
-            $lblStatus.Text = "$($t['StatusResult']) $psoMsg"
+            if ($psoList.Count -gt 0) {
+                $psoCount = $psoList.Count
+                $psoMsg = if ($script:CurrentLang -eq "DE") { "$psoCount Fine-Grained PSO(s) gefunden." } else { "$psoCount Fine-Grained PSO(s) found." }
+                $lblStatus.Text = "$($t['StatusResult']) $psoMsg"
+                $pnlDiag.Visible = $false
+            } else {
+                $hasReadAccess = $false
+                try {
+                    $psoContEntry = [ADSI]"LDAP://$($script:currentPsoPath)"
+                    $null = $psoContEntry.NativeGuid
+                    $cSearch = [System.DirectoryServices.DirectorySearcher]::new($psoContEntry)
+                    $cSearch.Filter = "(objectClass=*)"
+                    $cSearch.SearchScope = [System.DirectoryServices.SearchScope]::OneLevel
+                    $null = $cSearch.FindAll()
+                    $hasReadAccess = $true
+                } catch {
+                    $hasReadAccess = $false
+                }
+
+                $pnlDiag.Visible = $true
+                if (-not $hasReadAccess) {
+                    $lblDiagTitle.Text = if ($script:CurrentLang -eq "DE") { "⚠️ DIAGNOSE: Keine Leseberechtigung auf den PSO-Container!" } else { "⚠️ DIAGNOSIS: No read permissions on PSO container!" }
+                    $txtDiagDetails.Text = if ($script:CurrentLang -eq "DE") {
+@"
+URSACHE: Ihr aktueller Benutzer ($env:USERNAME) besitzt keine Leserechte auf 'CN=Password Settings Objects'.
+BEHEBUNG: Führen Sie folgenden Befehl auf dem Domain Controller (mit Admin-Rechten) aus:
+
+$($script:dsaclsCmd)
+"@
+                    } else {
+@"
+CAUSE: Current user ($env:USERNAME) lacks read permissions on 'CN=Password Settings Objects'.
+SOLUTION: Run the following command on your Domain Controller (as Admin):
+
+$($script:dsaclsCmd)
+"@
+                    }
+                    $lblStatus.Text = if ($script:CurrentLang -eq "DE") { "❌ Keine Leserechte auf AD-Kennwortrichtlinien (Container geschützt)." } else { "❌ Access Denied on Password Settings Objects." }
+                } else {
+                    $lblDiagTitle.Text = if ($script:CurrentLang -eq "DE") { "ℹ️ DIAGNOSE: Keine Fine-Grained Password Policies eingerichtet" } else { "ℹ️ DIAGNOSIS: No Fine-Grained Password Policies configured" }
+                    $txtDiagDetails.Text = if ($script:CurrentLang -eq "DE") {
+@"
+Der Systemcontainer ist lesbar, enthält jedoch keine Richtlinien-Objekte (0 PSOs).
+In dieser Domäne gilt für alle Benutzer und Gruppen die 'Default Domain Password Policy' (siehe Tab 1).
+"@
+                    } else {
+@"
+The container is readable, but contains no PSO objects (0 PSOs).
+All users and groups currently adhere to the 'Default Domain Password Policy' (Tab 1).
+"@
+                    }
+                    $lblStatus.Text = if ($script:CurrentLang -eq "DE") { "ℹ️ Keine PSOs in der Domäne definiert." } else { "ℹ️ No PSOs defined in domain." }
+                }
+            }
 
         } catch {
             $lblStatus.Text = "$($t['StatusError']): $($_.Exception.Message)"
@@ -2165,11 +2627,10 @@ function Open-ToolPasswordPolicies {
         }
     }
 
-    # --- BENUTZER-CHECK LOGIK ---
     $checkUserAction = {
         $uName = $txtUserCheck.Text.Trim()
         if ([string]::IsNullOrWhiteSpace($uName)) {
-            [System.Windows.Forms.MessageBox]::Show($t["ErrUserEmpty"], "Info", "OK", "Warning")
+            [System.Windows.Forms.MessageBox]::Show($t["ErrUserEmpty"], "Info", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             return
         }
 
@@ -2177,9 +2638,8 @@ function Open-ToolPasswordPolicies {
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
         try {
-            $rootEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://RootDSE")
-            $defNamingContext = $rootEntry.defaultNamingContext.ToString()
-            $domEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$defNamingContext")
+            $domDN = Get-DomainDN
+            $domEntry = [ADSI]"LDAP://$domDN"
             
             $uSearcher = [System.DirectoryServices.DirectorySearcher]::new($domEntry)
             $uSearcher.Filter = "(&(objectClass=user)(objectCategory=person)(|(sAMAccountName=$uName)(userPrincipalName=$uName)))"
@@ -2187,7 +2647,7 @@ function Open-ToolPasswordPolicies {
             $uRes = $uSearcher.FindOne()
 
             if (-not $uRes) {
-                [System.Windows.Forms.MessageBox]::Show($t["ErrUserNotFound"], "AD Search", "OK", "Warning")
+                [System.Windows.Forms.MessageBox]::Show($t["ErrUserNotFound"], "AD Search", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
                 $lblStatus.Text = $t["ErrUserNotFound"]
                 return
             }
@@ -2198,15 +2658,14 @@ function Open-ToolPasswordPolicies {
 
             $userResultList = @()
             if ($resultantPSO) {
-                # Liest die PSO-Werte aus
                 $psoEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$resultantPSO")
                 $psoName = $psoEntry.Properties["name"].Value
                 $pMinLen = "$($psoEntry.Properties['msDS-MinimumPasswordLength'].Value) " + (if ($script:CurrentLang -eq "DE") { "Zeichen" } else { "Characters" })
-                $pMinAge = & $convertTimeSpan $psoEntry.Properties["msDS-MinPasswordAge"].Value $true
-                $pMaxAge = & $convertTimeSpan $psoEntry.Properties["msDS-MaxPasswordAge"].Value $true
+                $pMinAge = Convert-LargeIntToTimeSpan $psoEntry.Properties["msDS-MinPasswordAge"].Value $true
+                $pMaxAge = Convert-LargeIntToTimeSpan $psoEntry.Properties["msDS-MaxPasswordAge"].Value $true
                 $pCompl  = if ([bool]$psoEntry.Properties["msDS-PasswordComplexityEnabled"].Value) { $t["ValActive"] } else { $t["ValDisabled"] }
                 $pThresh = "$($psoEntry.Properties['msDS-LockoutThreshold'].Value) " + (if ($script:CurrentLang -eq "DE") { "Versuche" } else { "Attempts" })
-                $pDur    = & $convertTimeSpan $psoEntry.Properties["msDS-LockoutDuration"].Value $false
+                $pDur    = Convert-LargeIntToTimeSpan $psoEntry.Properties["msDS-LockoutDuration"].Value $false
 
                 $userResultList = @(
                     [PSCustomObject]@{ $t["PropCategory"] = $t["CatAppliedPolicy"]; $t["PropName"] = $t["PropSource"]; $t["PropValue"] = "Fine-Grained PSO ($psoName)" },
@@ -2219,7 +2678,6 @@ function Open-ToolPasswordPolicies {
                     [PSCustomObject]@{ $t["PropCategory"] = $t["CatLockout"];       $t["PropName"] = $t["PropDuration"]; $t["PropValue"] = $pDur }
                 )
             } else {
-                # Fallback: Default Domain Policy
                 $userResultList = @(
                     [PSCustomObject]@{ $t["PropCategory"] = $t["CatAppliedPolicy"]; $t["PropName"] = $t["PropSource"]; $t["PropValue"] = $t["ValDefaultPolicy"] }
                 )
@@ -2239,7 +2697,30 @@ function Open-ToolPasswordPolicies {
         }
     }
 
-    # Event Wiring
+    $btnCopyCmd.Add_Click({
+        if ($script:dsaclsCmd) {
+            [System.Windows.Forms.Clipboard]::SetText($script:dsaclsCmd)
+            [System.Windows.Forms.MessageBox]::Show("Befehl in Zwischenablage kopiert:`n`n$($script:dsaclsCmd)", "Kopiert", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        }
+    })
+
+    $btnFixACL.Add_Click({
+        $confirm = [System.Windows.Forms.MessageBox]::Show("Möchten Sie versuchen, den Delegierungsbefehl jetzt direkt per PowerShell auszuführen?`n(Erfordert Domänen-Admin-Rechte)", "Delegieren", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+        if ($confirm -eq [System.Windows.Forms.DialogResult]::Yes) {
+            try {
+                $output = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $script:dsaclsCmd" -NoNewWindow -Wait -PassThru
+                if ($output.ExitCode -eq 0) {
+                    [System.Windows.Forms.MessageBox]::Show("Berechtigungen erfolgreich aktualisiert!", "Erfolg", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                    & $loadPolicies
+                } else {
+                    [System.Windows.Forms.MessageBox]::Show("Befehl mit Fehler beendet (ExitCode $($output.ExitCode)). Führen Sie den Befehl bitte manuell mit erhöhten Rechten auf dem DC aus.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+                }
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show("Fehler bei der Ausführung: $($_.Exception.Message)", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+            }
+        }
+    })
+
     $btnCheckUser.Add_Click($checkUserAction)
     $txtUserCheck.Add_KeyDown({
         if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
@@ -2248,11 +2729,10 @@ function Open-ToolPasswordPolicies {
         }
     })
 
-    # Export CSV
     $btnExport.Add_Click({
         $sfd = New-Object System.Windows.Forms.SaveFileDialog
         $sfd.Filter = "CSV-Datei (*.csv)|*.csv"
-        $sfd.FileName = "AD_Password_Policies_Audit.csv"
+        $sfd.FileName = "AD_Password_Policies_Audit_$((Get-Date).ToString('yyyyMMdd')).csv"
         if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $exportData = @()
             foreach ($row in $script:cachedDomainPolicies) {
@@ -2270,7 +2750,7 @@ function Open-ToolPasswordPolicies {
                 }
             }
             $exportData | Export-Csv -Path $sfd.FileName -NoTypeInformation -Delimiter ";" -Encoding UTF8
-            [System.Windows.Forms.MessageBox]::Show("Kennwortrichtlinien exportiert:`n$($sfd.FileName)", "Export OK", "OK", "Information")
+            [System.Windows.Forms.MessageBox]::Show("Kennwortrichtlinien exportiert:`n$($sfd.FileName)", "Export OK", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
         }
     })
 
@@ -2279,174 +2759,209 @@ function Open-ToolPasswordPolicies {
 
     [void]$form.ShowDialog()
 }
+
 # ==============================================================================
-# HAUPTLAUNCHER & DASHBOARD
+# HAUPTFENSTER & 3-SPALTEN SYSTEM-HEADER
 # ==============================================================================
 $mainForm = New-Object System.Windows.Forms.Form
 $mainForm.Text = Get-Text "Title"
-$mainForm.Size = New-Object System.Drawing.Size(650, 1030)
+$mainForm.Size = New-Object System.Drawing.Size(980, 990)
+$mainForm.StartPosition = "CenterScreen"
 $mainForm.FormBorderStyle = "FixedDialog"
 $mainForm.MaximizeBox = $false
-$mainForm.StartPosition = "CenterScreen"
+$mainForm.Font = New-Object System.Drawing.Font($script:UITheme.FontFamily, 9)
+$mainForm.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
+# --- HEADER PANEL (3 Spalten) ---
 $pnlHeader = New-Object System.Windows.Forms.Panel
 $pnlHeader.Dock = [System.Windows.Forms.DockStyle]::Top
-$pnlHeader.Height = 235
-$pnlHeader.BackColor = [System.Drawing.Color]::FromArgb(230, 238, 248)
+$pnlHeader.Height = 220
+$pnlHeader.BackColor = [System.Drawing.Color]::FromArgb(235, 242, 250)
 $mainForm.Controls.Add($pnlHeader)
 
+# Sprachumschalter (DE / EN)
 $btnLangEN = New-Object System.Windows.Forms.Button
-$btnLangEN.Location = "510, 10"; $btnLangEN.Size = "45, 25"; $btnLangEN.Text = "EN"
+$btnLangEN.Location = New-Object System.Drawing.Point(860, 10)
+$btnLangEN.Size = New-Object System.Drawing.Size(45, 26)
+$btnLangEN.Text = "EN"
 $btnLangEN.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
-$btnLangEN.BackColor = [System.Drawing.Color]::LightSteelBlue
 $pnlHeader.Controls.Add($btnLangEN)
 
 $btnLangDE = New-Object System.Windows.Forms.Button
-$btnLangDE.Location = "560, 10"; $btnLangDE.Size = "45, 25"; $btnLangDE.Text = "DE"
+$btnLangDE.Location = New-Object System.Drawing.Point(910, 10)
+$btnLangDE.Size = New-Object System.Drawing.Size(45, 26)
+$btnLangDE.Text = "DE"
 $btnLangDE.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
 $pnlHeader.Controls.Add($btnLangDE)
 
-$lblHeaderTitle = New-Object System.Windows.Forms.Label
-$lblHeaderTitle.Location = "15, 10"; $lblHeaderTitle.Size = "480, 20"
-$lblHeaderTitle.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 9.5, [System.Drawing.FontStyle]::Bold)
-$pnlHeader.Controls.Add($lblHeaderTitle)
+# Hauptüberschrift im Header
+$lblHeaderMain = New-Object System.Windows.Forms.Label
+$lblHeaderMain.Location = New-Object System.Drawing.Point(18, 10)
+$lblHeaderMain.Size = New-Object System.Drawing.Size(830, 24)
+$lblHeaderMain.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 11.5, [System.Drawing.FontStyle]::Bold)
+$lblHeaderMain.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
+$lblHeaderMain.Text = "💻 $localComputerName | $localUserName"
+$pnlHeader.Controls.Add($lblHeaderMain)
 
-$lblHeaderLogon = New-Object System.Windows.Forms.Label
-$lblHeaderLogon.Location = "15, 30"; $lblHeaderLogon.Size = "480, 20"
-$pnlHeader.Controls.Add($lblHeaderLogon)
+# Trennlinie
+$lblHeaderLine = New-Object System.Windows.Forms.Label
+$lblHeaderLine.Location = New-Object System.Drawing.Point(18, 38)
+$lblHeaderLine.Size = New-Object System.Drawing.Size(935, 1)
+$lblHeaderLine.BackColor = [System.Drawing.Color]::FromArgb(203, 213, 225)
+$pnlHeader.Controls.Add($lblHeaderLine)
 
-$lblHeaderStatus = New-Object System.Windows.Forms.Label
-$lblHeaderStatus.Location = "15, 50"; $lblHeaderStatus.Size = "590, 20"
-$lblHeaderStatus.ForeColor = [System.Drawing.Color]::DarkBlue
-$pnlHeader.Controls.Add($lblHeaderStatus)
+# -------------------------------------------------------------
+# SPALTE 1: Betriebssystem & Domäne (Links, X = 18, Breite = 300)
+# -------------------------------------------------------------
+$lblCol1Title = New-Object System.Windows.Forms.Label
+$lblCol1Title.Location = New-Object System.Drawing.Point(18, 46)
+$lblCol1Title.Size = New-Object System.Drawing.Size(300, 18)
+$lblCol1Title.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+$lblCol1Title.ForeColor = [System.Drawing.Color]::FromArgb(71, 85, 105)
+$pnlHeader.Controls.Add($lblCol1Title)
 
-$lblLine = New-Object System.Windows.Forms.Label
-$lblLine.Location = "15, 75"; $lblLine.Size = "590, 2"; $lblLine.BorderStyle = "Fixed3D"
-$pnlHeader.Controls.Add($lblLine)
+$lblCol1Content = New-Object System.Windows.Forms.Label
+$lblCol1Content.Location = New-Object System.Drawing.Point(18, 66)
+$lblCol1Content.Size = New-Object System.Drawing.Size(300, 142)
+$lblCol1Content.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+$lblCol1Content.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
+$pnlHeader.Controls.Add($lblCol1Content)
 
-$lblOSHeader = New-Object System.Windows.Forms.Label
-$lblOSHeader.Location = "15, 83"; $lblOSHeader.Size = "590, 140"
-$lblOSHeader.Font = New-Object System.Drawing.Font("Consolas", 8.5)
-$pnlHeader.Controls.Add($lblOSHeader)
+# -------------------------------------------------------------
+# SPALTE 2: System & Hardware (Mitte, X = 330, Breite = 295)
+# -------------------------------------------------------------
+$lblCol2Title = New-Object System.Windows.Forms.Label
+$lblCol2Title.Location = New-Object System.Drawing.Point(330, 46)
+$lblCol2Title.Size = New-Object System.Drawing.Size(295, 18)
+$lblCol2Title.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+$lblCol2Title.ForeColor = [System.Drawing.Color]::FromArgb(71, 85, 105)
+$pnlHeader.Controls.Add($lblCol2Title)
 
-# Client-Tools Gruppe (Tools 3, 4, 5, 8)
+$lblCol2Content = New-Object System.Windows.Forms.Label
+$lblCol2Content.Location = New-Object System.Drawing.Point(330, 66)
+$lblCol2Content.Size = New-Object System.Drawing.Size(295, 142)
+$lblCol2Content.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+$lblCol2Content.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
+$pnlHeader.Controls.Add($lblCol2Content)
+
+# -------------------------------------------------------------
+# SPALTE 3: Entra ID / Cloud Status (Rechts, X = 640, Breite = 315)
+# -------------------------------------------------------------
+$lblCol3Title = New-Object System.Windows.Forms.Label
+$lblCol3Title.Location = New-Object System.Drawing.Point(640, 46)
+$lblCol3Title.Size = New-Object System.Drawing.Size(315, 18)
+$lblCol3Title.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+$lblCol3Title.ForeColor = [System.Drawing.Color]::FromArgb(71, 85, 105)
+$pnlHeader.Controls.Add($lblCol3Title)
+
+$lblCol3Content = New-Object System.Windows.Forms.Label
+$lblCol3Content.Location = New-Object System.Drawing.Point(640, 66)
+$lblCol3Content.Size = New-Object System.Drawing.Size(315, 142)
+$lblCol3Content.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+$lblCol3Content.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
+$pnlHeader.Controls.Add($lblCol3Content)
+
+# --- CLIENT TOOLS GROUPBOX ---
 $grpClient = New-Object System.Windows.Forms.GroupBox
-$grpClient.Location = "20, 245"; $grpClient.Size = "590, 280"
+$grpClient.Location = New-Object System.Drawing.Point(18, 230)
+$grpClient.Size = New-Object System.Drawing.Size(935, 260)
 $grpClient.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 9, [System.Drawing.FontStyle]::Bold)
 $mainForm.Controls.Add($grpClient)
 
-$btnTool3 = New-Object System.Windows.Forms.Button
-$btnTool3.Location = "20, 28"; $btnTool3.Size = "550, 48"
-$btnTool3.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpClient.Controls.Add($btnTool3)
+$btnTool3 = New-Object System.Windows.Forms.Button; $btnTool3.Location = "20, 24"; $btnTool3.Size = "895, 48"
+$btnTool3.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool3.Add_Click({ Open-ToolEntraStatus }); $grpClient.Controls.Add($btnTool3)
 
-$btnTool4 = New-Object System.Windows.Forms.Button
-$btnTool4.Location = "20, 84"; $btnTool4.Size = "550, 48"
-$btnTool4.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpClient.Controls.Add($btnTool4)
+$btnTool4 = New-Object System.Windows.Forms.Button; $btnTool4.Location = "20, 78"; $btnTool4.Size = "895, 48"
+$btnTool4.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool4.Add_Click({ Open-ToolGroupsAndGPO }); $grpClient.Controls.Add($btnTool4)
 
-$btnTool5 = New-Object System.Windows.Forms.Button
-$btnTool5.Location = "20, 140"; $btnTool5.Size = "550, 48"
-$btnTool5.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpClient.Controls.Add($btnTool5)
+$btnTool5 = New-Object System.Windows.Forms.Button; $btnTool5.Location = "20, 132"; $btnTool5.Size = "895, 48"
+$btnTool5.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool5.Add_Click({ Open-ToolWin11Check }); $grpClient.Controls.Add($btnTool5)
 
-$btnTool8 = New-Object System.Windows.Forms.Button
-$btnTool8.Location = "20, 196"; $btnTool8.Size = "550, 48"
-$btnTool8.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpClient.Controls.Add($btnTool8)
+$btnTool8 = New-Object System.Windows.Forms.Button; $btnTool8.Location = "20, 186"; $btnTool8.Size = "895, 48"
+$btnTool8.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool8.Add_Click({ Show-ClientSoftwareAnalysis }); $grpClient.Controls.Add($btnTool8)
 
-# AD-Tools Gruppe (Tools 1, 2, 6, 7, 9, 11)
+# --- AD TOOLS GROUPBOX ---
 $grpAD = New-Object System.Windows.Forms.GroupBox
-$grpAD.Location = "20, 535"; $grpAD.Size = "590, 395"
+$grpAD.Location = New-Object System.Drawing.Point(18, 500)
+$grpAD.Size = New-Object System.Drawing.Size(935, 360)
 $grpAD.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 9, [System.Drawing.FontStyle]::Bold)
 $mainForm.Controls.Add($grpAD)
 
-$btnTool1 = New-Object System.Windows.Forms.Button
-$btnTool1.Location = "20, 28"; $btnTool1.Size = "550, 48"
-$btnTool1.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpAD.Controls.Add($btnTool1)
+$btnTool1 = New-Object System.Windows.Forms.Button; $btnTool1.Location = "20, 24"; $btnTool1.Size = "895, 48"
+$btnTool1.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool1.Add_Click({ Open-ToolLastLogon }); $grpAD.Controls.Add($btnTool1)
 
-$btnTool2 = New-Object System.Windows.Forms.Button
-$btnTool2.Location = "20, 84"; $btnTool2.Size = "550, 48"
-$btnTool2.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpAD.Controls.Add($btnTool2)
+$btnTool2 = New-Object System.Windows.Forms.Button; $btnTool2.Location = "20, 78"; $btnTool2.Size = "895, 48"
+$btnTool2.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool2.Add_Click({ Open-ToolADAudit }); $grpAD.Controls.Add($btnTool2)
 
-$btnTool6 = New-Object System.Windows.Forms.Button
-$btnTool6.Location = "20, 140"; $btnTool6.Size = "550, 48"
-$btnTool6.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpAD.Controls.Add($btnTool6)
+$btnTool6 = New-Object System.Windows.Forms.Button; $btnTool6.Location = "20, 132"; $btnTool6.Size = "895, 48"
+$btnTool6.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool6.Add_Click({ Open-ToolDomainOverview }); $grpAD.Controls.Add($btnTool6)
 
-$btnTool7 = New-Object System.Windows.Forms.Button
-$btnTool7.Location = "20, 196"; $btnTool7.Size = "550, 48"
-$btnTool7.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpAD.Controls.Add($btnTool7)
+$btnTool7 = New-Object System.Windows.Forms.Button; $btnTool7.Location = "20, 186"; $btnTool7.Size = "895, 48"
+$btnTool7.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool7.Add_Click({ Open-ToolOSSupportAudit }); $grpAD.Controls.Add($btnTool7)
 
-$btnTool9 = New-Object System.Windows.Forms.Button
-$btnTool9.Location = "20, 252"; $btnTool9.Size = "550, 48"
-$btnTool9.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpAD.Controls.Add($btnTool9)
+$btnTool9 = New-Object System.Windows.Forms.Button; $btnTool9.Location = "20, 240"; $btnTool9.Size = "895, 48"
+$btnTool9.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool9.Add_Click({ Show-Tool9-ACLCompare }); $grpAD.Controls.Add($btnTool9)
 
-$btnTool11 = New-Object System.Windows.Forms.Button
-$btnTool11.Location = "20, 308"; $btnTool11.Size = "550, 48"
-$btnTool11.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Regular)
-$grpAD.Controls.Add($btnTool11)
+$btnTool11 = New-Object System.Windows.Forms.Button; $btnTool11.Location = "20, 294"; $btnTool11.Size = "895, 48"
+$btnTool11.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool11.Add_Click({ Show-Tool11-PasswordPolicies }); $grpAD.Controls.Add($btnTool11)
 
-# UI-Aktualisierung
+# --- UI REFRESH FUNKTION ---
 function Update-UI {
-    $mainForm.Text          = Get-Text "Title"
-    $grpClient.Text         = Get-Text "CategoryClient"
-    $grpAD.Text             = Get-Text "CategoryAD"
+    $mainForm.Text  = Get-Text "Title"
+    $grpClient.Text = Get-Text "CategoryClient"
+    $grpAD.Text     = Get-Text "CategoryAD"
 
-    $lblHeaderTitle.Text    = "$(Get-Text 'Computer'): $localComputerName | $(Get-Text 'Domain'): $localDomainName"
-    $lblHeaderLogon.Text    = "$(Get-Text 'LogonServer'): $localLogonServer | $(Get-Text 'User'): $localUserName"
-    $lblHeaderStatus.Text   = "$(Get-Text 'EntraStatus'): $localJoinStatus | AzureAdPrt: $localAzureAdPrt"
+    $lblCol1Title.Text = Get-Text "LblHdrOS"
+    $lblCol2Title.Text = Get-Text "LblHdrSystem"
+    $lblCol3Title.Text = Get-Text "LblHdrEntra"
 
-    $lblOSHeader.Text = @"
-OS Name:            $osNameFormatted
-Version / Release:  $osVersionRelease
-Build Number:       $osBuildFormatted
-Architecture:       $osArchFormatted
-Install Date:       $osInstallDateForm
-Last Update:        $osPatchFormatted
+    # Spalte 1: OS & Domäne
+    $lblCol1Content.Text = @"
+$("{0,-12}: {1}" -f (Get-Text "LblOS"), $osCaption)
+$("{0,-12}: {1}" -f (Get-Text "LblBuild"), $osBuildNumber)
+$("{0,-12}: {1}" -f (Get-Text "LblVersion"), $osVersionDisplay)
+$("{0,-12}: {1}" -f (Get-Text "LblDomain"), $localDomainName)
+$("{0,-12}: {1}" -f (Get-Text "LblLogonServer"), $localLogonServer)
 "@
 
-    $btnTool1.Text = Get-Text "BtnTool1"
-    $btnTool2.Text = Get-Text "BtnTool2"
-    $btnTool3.Text = Get-Text "BtnTool3"
-    $btnTool4.Text = Get-Text "BtnTool4"
-    $btnTool5.Text = Get-Text "BtnTool5"
-    $btnTool6.Text = Get-Text "BtnTool6"
-    $btnTool7.Text = Get-Text "BtnTool7"
-    $btnTool8.Text = Get-Text "BtnTool8"
-    $btnTool9.Text = Get-Text "BtnTool9"
+    # Spalte 2: System & Hardware
+    $lblCol2Content.Text = @"
+$("{0,-13}: {1}" -f (Get-Text "LblCompName"), $localComputerName)
+$("{0,-13}: {1}" -f (Get-Text "LblManuf"), $localManufacturer)
+$("{0,-13}: {1}" -f (Get-Text "LblModel"), $localModel)
+$("{0,-13}: {1}" -f (Get-Text "LblSerial"), $localSerial)
+$("{0,-13}: {1}" -f (Get-Text "LblSysType"), $localSystemType)
+"@
+
+    # Spalte 3: Entra ID / Cloud Status
+    $lblCol3Content.Text = @"
+$("{0,-12}: {1}" -f (Get-Text "LblJoinStatus"), $localJoinStatus)
+$("{0,-12}: {1}" -f (Get-Text "LblPrtStatus"), $localAzureAdPrt)
+$("{0,-12}: {1}" -f (Get-Text "LblTenantName"), $localTenantName)
+$("{0,-12}: {1}" -f (Get-Text "LblTenantId"), $(if ($localTenantId.Length -gt 16) { $localTenantId.Substring(0,13) + "..." } else { $localTenantId }))
+$("{0,-12}: {1}" -f (Get-Text "LblDeviceId"), $(if ($localDeviceId.Length -gt 16) { $localDeviceId.Substring(0,13) + "..." } else { $localDeviceId }))
+"@
+
+    $btnTool1.Text  = Get-Text "BtnTool1"
+    $btnTool2.Text  = Get-Text "BtnTool2"
+    $btnTool3.Text  = Get-Text "BtnTool3"
+    $btnTool4.Text  = Get-Text "BtnTool4"
+    $btnTool5.Text  = Get-Text "BtnTool5"
+    $btnTool6.Text  = Get-Text "BtnTool6"
+    $btnTool7.Text  = Get-Text "BtnTool7"
+    $btnTool8.Text  = Get-Text "BtnTool8"
+    $btnTool9.Text  = Get-Text "BtnTool9"
     $btnTool11.Text = Get-Text "BtnTool11"
 
-    if ($script:CurrentLang -eq "EN") {
-        $btnLangEN.BackColor = [System.Drawing.Color]::LightSteelBlue
-        $btnLangDE.BackColor = [System.Drawing.SystemColors]::Control
-    } else {
-        $btnLangDE.BackColor = [System.Drawing.Color]::LightSteelBlue
-        $btnLangEN.BackColor = [System.Drawing.SystemColors]::Control
-    }
+    $btnLangDE.BackColor = if ($script:CurrentLang -eq "DE") { [System.Drawing.Color]::FromArgb(37, 99, 235) } else { [System.Drawing.Color]::LightSteelBlue }
+    $btnLangDE.ForeColor = if ($script:CurrentLang -eq "DE") { [System.Drawing.Color]::White } else { [System.Drawing.Color]::Black }
+    $btnLangEN.BackColor = if ($script:CurrentLang -eq "EN") { [System.Drawing.Color]::FromArgb(37, 99, 235) } else { [System.Drawing.Color]::LightSteelBlue }
+    $btnLangEN.ForeColor = if ($script:CurrentLang -eq "EN") { [System.Drawing.Color]::White } else { [System.Drawing.Color]::Black }
 }
 
-# Sprachumschaltung
 $btnLangEN.Add_Click({ $script:CurrentLang = "EN"; Update-UI })
 $btnLangDE.Add_Click({ $script:CurrentLang = "DE"; Update-UI })
 
-# Tool-Trigger
-$btnTool3.Add_Click({ Open-ToolEntraStatus })
-$btnTool4.Add_Click({ Open-ToolGroupsAndGPO })
-$btnTool5.Add_Click({ Open-ToolWin11Check })
-$btnTool8.Add_Click({ Show-ClientSoftwareAnalysis })
-
-$btnTool1.Add_Click({ Open-ToolLastLogon })
-$btnTool2.Add_Click({ Open-ToolADAudit })
-$btnTool6.Add_Click({ Open-ToolDomainOverview })
-$btnTool7.Add_Click({ Open-ToolOSSupportAudit })
-$btnTool9.Add_Click({ Show-Tool9-ACLCompare })
-$btnTool11.Add_Click({ Show-Tool11-PasswordPolicyAudit })
-
-# Dashboard starten
+# Starten
 Update-UI
 [void]$mainForm.ShowDialog()
