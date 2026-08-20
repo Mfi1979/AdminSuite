@@ -1846,451 +1846,427 @@ function Show-Tool9-ACLCompare {
 }
 
 # ==============================================================================
-# TOOL 11: AD PASSWORD POLICIES & FINE-GRAINED PSO AUDIT (STRIKTE SPRACHTRENNUNG)
+# TOOL 11: AD KENNWORT-RICHTLINIEN & PSO AUDIT (LAYOUT & PSO FIX)
 # ==============================================================================
-function Show-Tool11-PasswordPolicyAudit {
+function Open-ToolPasswordPolicies {
     if (-not (Assert-DomainJoined)) { return }
 
-    $lang = if ($script:CurrentLang -eq "EN") { "EN" } else { "DE" }
-    $t = @{
-        "DE" = @{
-            "Title"           = "Tool 11: AD Kennwortrichtlinien & PSO Audit"
-            "TabDomain"       = "1. Standard-Domänenrichtlinie"
-            "TabPSO"          = "2. Fine-Grained Password Policies (PSO)"
-            "TabUser"         = "3. Effektive Benutzer-Richtlinie"
-            "PropName"        = "Eigenschaft / Richtlinie"
-            "PropValue"       = "Konfigurierter Wert"
-            "PsoName"         = "PSO Name"
-            "PsoPrecedence"   = "Priorität (Precedence)"
-            "PsoMinLength"    = "Min. Länge"
-            "PsoHistory"      = "Historie"
-            "PsoComplexity"   = "Komplexität"
-            "PsoMaxAge"       = "Max. Alter (Tage)"
-            "PsoMinAge"       = "Min. Alter (Tage)"
-            "PsoLockoutThresh"= "Sperrschwelle"
-            "PsoLockoutDur"   = "Sperrdauer (Min.)"
-            "PsoAppliesTo"    = "Zugewiesen an (Applies To)"
-            "BtnLoad"         = "Richtlinien laden / aktualisieren"
-            "BtnExport"       = "Exportieren (CSV)"
-            "LblUserSearch"   = "Benutzername (sAMAccountName):"
-            "BtnCheckUser"    = "Effektive Richtlinie prüfen"
-            "StatusReady"     = "Bereit zur Abfrage."
-            "StatusLoading"   = "Lese Active Directory Kennwortrichtlinien aus..."
-            "StatusDone"      = "Kennwortrichtlinien erfolgreich geladen."
-            "ErrNoDomain"     = "Keine Active Directory Domäne erreichbar."
-            "ErrUserNotFound" = "Benutzer nicht im Active Directory gefunden."
-            "UserResultTitle" = "Ergebnis für Benutzer"
-            "InheritedDomain" = "Standard-Domänenrichtlinie (Keine spezifische PSO)"
-            "Days"            = "Tage"
-            "Minutes"         = "Minuten"
-            "Characters"      = "Zeichen"
-            "Passwords"       = "Passwörter"
-            "Attempts"        = "Versuche"
-            "InvalidAttempts" = "ungültige Versuche"
-            "NoLockout"       = "Keine Sperre (0)"
-            "NeverExpires"    = "Nie ablaufend / Deaktiviert"
-            "NoneAssigned"    = "Niemand (Keine Zuweisung)"
-            "Enabled"         = "Aktiviert"
-            "Disabled"        = "Deaktiviert"
-            "Safe"            = "Sicher"
-            "Unsafe"          = "Unsicher"
-            "Yes"             = "Ja"
-            "No"              = "Nein"
-            "DPO_MinLength"   = "Minimale Kennwortlänge"
-            "DPO_Complexity"  = "Kennwortkomplexität"
-            "DPO_MaxAge"      = "Maximales Kennwortalter"
-            "DPO_MinAge"      = "Minimales Kennwortalter"
-            "DPO_History"     = "Kennworthistorie / Verlauf"
-            "DPO_LockoutTh"   = "Kontosperrungsschwelle"
-            "DPO_LockoutDur"  = "Kontosperrdauer"
-            "DPO_ObsWindow"   = "Sperrungsbeobachtungsfenster"
-            "DPO_RevEncrypt"  = "Umkehrbare Verschlüsselung"
-            "Eff_Policy"      = "Gültige Richtlinie"
-            "Eff_PSO_DN"      = "PSO DistinguishedName"
-            "Eff_LockoutTh"   = "Kontosperrung nach Fehlversuchen"
-        }
-        "EN" = @{
-            "Title"           = "Tool 11: AD Password Policies & PSO Audit"
-            "TabDomain"       = "1. Default Domain Policy"
-            "TabPSO"          = "2. Fine-Grained Password Policies (PSO)"
-            "TabUser"         = "3. Effective User Password Policy"
-            "PropName"        = "Property / Policy Setting"
-            "PropValue"       = "Configured Value"
-            "PsoName"         = "PSO Name"
-            "PsoPrecedence"   = "Precedence"
-            "PsoMinLength"    = "Min Length"
-            "PsoHistory"      = "History"
-            "PsoComplexity"   = "Complexity"
-            "PsoMaxAge"       = "Max Age (Days)"
-            "PsoMinAge"       = "Min Age (Days)"
-            "PsoLockoutThresh"= "Lockout Threshold"
-            "PsoLockoutDur"   = "Lockout Duration (Min)"
-            "PsoAppliesTo"    = "Applies To"
-            "BtnLoad"         = "Load / Refresh Policies"
-            "BtnExport"       = "Export (CSV)"
-            "LblUserSearch"   = "Username (sAMAccountName):"
-            "BtnCheckUser"    = "Check Effective Policy"
-            "StatusReady"     = "Ready for query."
-            "StatusLoading"   = "Querying Active Directory Password Policies..."
-            "StatusDone"      = "Password policies loaded successfully."
-            "ErrNoDomain"     = "No Active Directory Domain accessible."
-            "ErrUserNotFound" = "User not found in Active Directory."
-            "UserResultTitle" = "Result for user"
-            "InheritedDomain" = "Default Domain Policy (No specific PSO applied)"
-            "Days"            = "Days"
-            "Minutes"         = "Minutes"
-            "Characters"      = "Characters"
-            "Passwords"       = "Passwords"
-            "Attempts"        = "Attempts"
-            "InvalidAttempts" = "invalid attempts"
-            "NoLockout"       = "No Lockout (0)"
-            "NeverExpires"    = "Never Expires / Disabled"
-            "NoneAssigned"    = "None (No assignment)"
-            "Enabled"         = "Enabled"
-            "Disabled"        = "Disabled"
-            "Safe"            = "Secure"
-            "Unsafe"          = "Insecure"
-            "Yes"             = "Yes"
-            "No"              = "No"
-            "DPO_MinLength"   = "Minimum Password Length"
-            "DPO_Complexity"  = "Password Complexity"
-            "DPO_MaxAge"      = "Maximum Password Age"
-            "DPO_MinAge"      = "Minimum Password Age"
-            "DPO_History"     = "Password History Length"
-            "DPO_LockoutTh"   = "Account Lockout Threshold"
-            "DPO_LockoutDur"  = "Account Lockout Duration"
-            "DPO_ObsWindow"   = "Lockout Observation Window"
-            "DPO_RevEncrypt"  = "Store Passwords Using Reversible Encryption"
-            "Eff_Policy"      = "Effective Policy"
-            "Eff_PSO_DN"      = "PSO DistinguishedName"
-            "Eff_LockoutTh"   = "Account Lockout Threshold"
-        }
-    }[$lang]
-
-    function Convert-LargeIntToTimeSpan([object]$largeIntObj) {
-        if (-not $largeIntObj) { return $null }
-        try {
-            $highPart = $largeIntObj.GetType().InvokeMember("HighPart", [System.Reflection.BindingFlags]::GetProperty, $null, $largeIntObj, $null)
-            $lowPart  = $largeIntObj.GetType().InvokeMember("LowPart", [System.Reflection.BindingFlags]::GetProperty, $null, $largeIntObj, $null)
-            $raw64 = ([int64]$highPart -shl 32) -bor ([int64]$lowPart -band 0xFFFFFFFF)
-            if ($raw64 -lt 0) {
-                return [timespan]::FromTicks(-$raw64)
-            } else {
-                return [timespan]::FromTicks($raw64)
-            }
-        } catch {
-            return $null
-        }
-    }
+    $t = $script:I18N[$script:CurrentLang]
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = $t["Title"]
-    $form.Size = New-Object System.Drawing.Size(1000, 680)
-    $form.StartPosition = "CenterScreen"
+    $form.Text = $t["Tool11Title"]
+    $form.Size = New-Object System.Drawing.Size(1150, 720)
+    $form.StartPosition = "CenterParent"
     $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
     $form.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
-    $pnlHeader = New-Object System.Windows.Forms.Panel
-    $pnlHeader.Dock = "Top"
-    $pnlHeader.Height = 60
-    $pnlHeader.BackColor = [System.Drawing.Color]::White
-    $pnlHeader.Padding = New-Object System.Windows.Forms.Padding(15, 10, 15, 10)
+    # Header Panel
+    $headerPanel = New-Object System.Windows.Forms.Panel
+    $headerPanel.Dock = "Top"
+    $headerPanel.Height = 60
+    $headerPanel.BackColor = [System.Drawing.Color]::White
+    $form.Controls.Add($headerPanel)
 
     $lblTitle = New-Object System.Windows.Forms.Label
-    $lblTitle.Text = "🔑 " + $t["Title"]
-    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
-    $lblTitle.ForeColor = [System.Drawing.Color]::FromArgb(24, 43, 73)
+    $lblTitle.Text = $t["Tool11Title"]
+    $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
+    $lblTitle.Location = New-Object System.Drawing.Point(20, 8)
     $lblTitle.AutoSize = $true
-    $lblTitle.Location = New-Object System.Drawing.Point(15, 15)
+    $headerPanel.Controls.Add($lblTitle)
 
-    $btnRefresh = New-Object System.Windows.Forms.Button
-    $btnRefresh.Text = "🔄 " + $t["BtnLoad"]
-    $btnRefresh.Size = New-Object System.Drawing.Size(200, 32)
-    $btnRefresh.Location = New-Object System.Drawing.Point(580, 14)
-    $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $btnRefresh.ForeColor = [System.Drawing.Color]::White
-    $btnRefresh.FlatStyle = "Flat"
+    $lblSubTitle = New-Object System.Windows.Forms.Label
+    $lblSubTitle.Text = $t["Tool11Sub"]
+    $lblSubTitle.ForeColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    $lblSubTitle.Location = New-Object System.Drawing.Point(22, 33)
+    $lblSubTitle.AutoSize = $true
+    $headerPanel.Controls.Add($lblSubTitle)
+
+    # Bottom Panel
+    $bottomPanel = New-Object System.Windows.Forms.Panel
+    $bottomPanel.Dock = "Bottom"
+    $bottomPanel.Height = 50
+    $bottomPanel.BackColor = [System.Drawing.Color]::White
+    $form.Controls.Add($bottomPanel)
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Location = New-Object System.Drawing.Point(20, 15)
+    $lblStatus.AutoSize = $true
+    $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(71, 85, 105)
+    $lblStatus.Text = $t["StatusReady"]
+    $bottomPanel.Controls.Add($lblStatus)
 
     $btnExport = New-Object System.Windows.Forms.Button
-    $btnExport.Text = "💾 " + $t["BtnExport"]
-    $btnExport.Size = New-Object System.Drawing.Size(150, 32)
-    $btnExport.Location = New-Object System.Drawing.Point(790, 14)
-    $btnExport.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 240)
+    $btnExport.Text = $t["BtnExportCsv"]
+    $btnExport.Size = New-Object System.Drawing.Size(130, 30)
+    $btnExport.Location = New-Object System.Drawing.Point(830, 10)
+    $btnExport.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+    $btnExport.BackColor = [System.Drawing.Color]::FromArgb(37, 99, 235)
+    $btnExport.ForeColor = [System.Drawing.Color]::White
     $btnExport.FlatStyle = "Flat"
+    $btnExport.FlatAppearance.BorderSize = 0
+    $bottomPanel.Controls.Add($btnExport)
 
-    $pnlHeader.Controls.AddRange(@($lblTitle, $btnRefresh, $btnExport))
+    $btnRefresh = New-Object System.Windows.Forms.Button
+    $btnRefresh.Text = $t["BtnRefresh"]
+    $btnRefresh.Size = New-Object System.Drawing.Size(130, 30)
+    $btnRefresh.Location = New-Object System.Drawing.Point(970, 10)
+    $btnRefresh.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+    $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(100, 116, 139)
+    $btnRefresh.ForeColor = [System.Drawing.Color]::White
+    $btnRefresh.FlatStyle = "Flat"
+    $btnRefresh.FlatAppearance.BorderSize = 0
+    $bottomPanel.Controls.Add($btnRefresh)
 
+    # Tab Control
     $tabControl = New-Object System.Windows.Forms.TabControl
     $tabControl.Dock = "Fill"
     $tabControl.Padding = New-Object System.Drawing.Point(12, 6)
+    $form.Controls.Add($tabControl)
+    $tabControl.BringToFront()
 
+    # --- TAB 1: Default Domain Password Policy ---
     $tabDomain = New-Object System.Windows.Forms.TabPage
-    $tabDomain.Text = $t["TabDomain"]
+    $tabDomain.Text = $t["TabDefaultPolicy"]
     $tabDomain.BackColor = [System.Drawing.Color]::White
+    $tabControl.TabPages.Add($tabDomain)
 
-    $tabPSO = New-Object System.Windows.Forms.TabPage
-    $tabPSO.Text = $t["TabPSO"]
-    $tabPSO.BackColor = [System.Drawing.Color]::White
-
-    $tabUser = New-Object System.Windows.Forms.TabPage
-    $tabUser.Text = $t["TabUser"]
-    $tabUser.BackColor = [System.Drawing.Color]::White
-
-    $tabControl.TabPages.AddRange(@($tabDomain, $tabPSO, $tabUser))
-
-    # Tab 1
     $gridDomain = New-Object System.Windows.Forms.DataGridView
     $gridDomain.Dock = "Fill"
     $gridDomain.BackgroundColor = [System.Drawing.Color]::White
     $gridDomain.BorderStyle = "None"
-    $gridDomain.AutoSizeColumnsMode = "Fill"
     $gridDomain.ReadOnly = $true
     $gridDomain.AllowUserToAddRows = $false
-    $gridDomain.RowHeadersVisible = $false
     $gridDomain.SelectionMode = "FullRowSelect"
+    $gridDomain.AutoSizeColumnsMode = "AllCells"
     $tabDomain.Controls.Add($gridDomain)
 
-    # Tab 2
+    # --- TAB 2: Fine-Grained PSOs ---
+    $tabPSO = New-Object System.Windows.Forms.TabPage
+    $tabPSO.Text = $t["TabFineGrained"]
+    $tabPSO.BackColor = [System.Drawing.Color]::White
+    $tabControl.TabPages.Add($tabPSO)
+
     $gridPSO = New-Object System.Windows.Forms.DataGridView
     $gridPSO.Dock = "Fill"
     $gridPSO.BackgroundColor = [System.Drawing.Color]::White
     $gridPSO.BorderStyle = "None"
-    $gridPSO.AutoSizeColumnsMode = "AllCells"
     $gridPSO.ReadOnly = $true
     $gridPSO.AllowUserToAddRows = $false
-    $gridPSO.RowHeadersVisible = $false
     $gridPSO.SelectionMode = "FullRowSelect"
+    $gridPSO.AutoSizeColumnsMode = "AllCells"
     $tabPSO.Controls.Add($gridPSO)
 
-    # Tab 3
-    $pnlUserTop = New-Object System.Windows.Forms.Panel
-    $pnlUserTop.Dock = "Top"
-    $pnlUserTop.Height = 55
-    $pnlUserTop.BackColor = [System.Drawing.Color]::FromArgb(250, 250, 250)
+    # --- TAB 3: User Effective Policy Check ---
+    $tabUser = New-Object System.Windows.Forms.TabPage
+    $tabUser.Text = $t["TabUserCheck"]
+    $tabUser.BackColor = [System.Drawing.Color]::White
+    $tabControl.TabPages.Add($tabUser)
 
-    $lblUserPrompt = New-Object System.Windows.Forms.Label
-    $lblUserPrompt.Text = $t["LblUserSearch"]
-    $lblUserPrompt.Location = New-Object System.Drawing.Point(15, 18)
-    $lblUserPrompt.AutoSize = $true
+    $userTopPanel = New-Object System.Windows.Forms.Panel
+    $userTopPanel.Dock = "Top"
+    $userTopPanel.Height = 55
+    $userTopPanel.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 252)
+    $tabUser.Controls.Add($userTopPanel)
 
-    $txtUserSearch = New-Object System.Windows.Forms.TextBox
-    $txtUserSearch.Location = New-Object System.Drawing.Point(220, 15)
-    $txtUserSearch.Size = New-Object System.Drawing.Size(220, 25)
+    $lblUser = New-Object System.Windows.Forms.Label
+    $lblUser.Text = $t["UserSearchLabel"]
+    $lblUser.Location = New-Object System.Drawing.Point(15, 18)
+    $lblUser.AutoSize = $true
+    $lblUser.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $userTopPanel.Controls.Add($lblUser)
 
-    $btnUserCheck = New-Object System.Windows.Forms.Button
-    $btnUserCheck.Text = "🔍 " + $t["BtnCheckUser"]
-    $btnUserCheck.Location = New-Object System.Drawing.Point(450, 13)
-    $btnUserCheck.Size = New-Object System.Drawing.Size(200, 28)
-    $btnUserCheck.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $btnUserCheck.ForeColor = [System.Drawing.Color]::White
-    $btnUserCheck.FlatStyle = "Flat"
+    # FIX: Position nach rechts gerückt (X=320), damit das deutsche Label nicht überlappt
+    $txtUserCheck = New-Object System.Windows.Forms.TextBox
+    $txtUserCheck.Location = New-Object System.Drawing.Point(320, 14)
+    $txtUserCheck.Size = New-Object System.Drawing.Size(200, 25)
+    $userTopPanel.Controls.Add($txtUserCheck)
 
-    $pnlUserTop.Controls.AddRange(@($lblUserPrompt, $txtUserSearch, $btnUserCheck))
+    $btnCheckUser = New-Object System.Windows.Forms.Button
+    $btnCheckUser.Text = $t["BtnCheckUser"]
+    $btnCheckUser.Location = New-Object System.Drawing.Point(530, 13)
+    $btnCheckUser.Size = New-Object System.Drawing.Size(150, 27)
+    $btnCheckUser.BackColor = [System.Drawing.Color]::FromArgb(15, 118, 110)
+    $btnCheckUser.ForeColor = [System.Drawing.Color]::White
+    $btnCheckUser.FlatStyle = "Flat"
+    $btnCheckUser.FlatAppearance.BorderSize = 0
+    $userTopPanel.Controls.Add($btnCheckUser)
 
-    $gridUser = New-Object System.Windows.Forms.DataGridView
-    $gridUser.Dock = "Fill"
-    $gridUser.BackgroundColor = [System.Drawing.Color]::White
-    $gridUser.BorderStyle = "None"
-    $gridUser.AutoSizeColumnsMode = "Fill"
-    $gridUser.ReadOnly = $true
-    $gridUser.AllowUserToAddRows = $false
-    $gridUser.RowHeadersVisible = $false
-    $gridUser.SelectionMode = "FullRowSelect"
+    $gridUserPolicy = New-Object System.Windows.Forms.DataGridView
+    $gridUserPolicy.Dock = "Fill"
+    $gridUserPolicy.BackgroundColor = [System.Drawing.Color]::White
+    $gridUserPolicy.BorderStyle = "None"
+    $gridUserPolicy.ReadOnly = $true
+    $gridUserPolicy.AllowUserToAddRows = $false
+    $gridUserPolicy.SelectionMode = "FullRowSelect"
+    $gridUserPolicy.AutoSizeColumnsMode = "AllCells"
+    $tabUser.Controls.Add($gridUserPolicy)
+    $gridUserPolicy.BringToFront()
 
-    $tabUser.Controls.AddRange(@($gridUser, $pnlUserTop))
-
-    $statusStrip = New-Object System.Windows.Forms.StatusStrip
-    $lblStatus = New-Object System.Windows.Forms.ToolStripStatusLabel
-    $lblStatus.Text = $t["StatusReady"]
-    $statusStrip.Items.Add($lblStatus)
-
-    $form.Controls.AddRange(@($tabControl, $statusStrip, $pnlHeader))
-
-    $script:cachedDomainPolicy = @()
-    $script:cachedPSOs = @()
-
-    $loadPolicies = {
-        $lblStatus.Text = $t["StatusLoading"]
-        [System.Windows.Forms.Application]::DoEvents()
-
+    # Helper: Convert I8 / Large Integer FileTime Duration to Minutes/Days/Hours
+    $convertTimeSpan = {
+        param($val, $asDays = $false)
+        if (-not $val) { return if ($script:CurrentLang -eq "DE") { "Nicht konfiguriert" } else { "Not Configured" } }
         try {
-            $rootDSE = [ADSI]"LDAP://RootDSE"
-            $defaultNC = $rootDSE.defaultNamingContext
-            if (-not $defaultNC) {
-                [System.Windows.Forms.MessageBox]::Show($t["ErrNoDomain"], "AD Error", "OK", "Error")
-                return
+            $ticks = 0
+            if ($val -is [System.Int64]) {
+                $ticks = $val
+            } elseif ($val.GetType().Name -eq "__ComObject" -or $val.GetType().FullName -like "*LargeInteger*") {
+                $ticks = ([int64]$val.HighPart -shl 32) + [int64]$val.LowPart
+            } else {
+                $ticks = [int64]::Parse($val.ToString())
             }
 
-            # 1. Default Domain Password Policy
-            $domEntry = [ADSI]"LDAP://$defaultNC"
-            $domProps = $domEntry.Properties
+            if ($ticks -eq 0 -or $ticks -eq [Int64]::MinValue) {
+                return if ($script:CurrentLang -eq "DE") { "Nie ablaufend / Deaktiviert" } else { "Never Expires / Disabled" }
+            }
 
-            $minPwdAgeSpan = Convert-LargeIntToTimeSpan $domProps["minPwdAge"].Value
-            $maxPwdAgeSpan = Convert-LargeIntToTimeSpan $domProps["maxPwdAge"].Value
-            $lockoutDurSpan = Convert-LargeIntToTimeSpan $domProps["lockoutDuration"].Value
-            $lockoutWinSpan = Convert-LargeIntToTimeSpan $domProps["lockOutObservationWindow"].Value
+            # Negative FileTime Ticks: 1 Tick = 100 Nanosekunden
+            if ($ticks -lt 0) { $ticks = -$ticks }
+            $ts = [TimeSpan]::FromTicks($ticks)
 
-            $minPwdAgeDays = if ($minPwdAgeSpan) { [math]::Round($minPwdAgeSpan.TotalDays, 1) } else { 0 }
-            $maxPwdAgeDays = if ($maxPwdAgeSpan) { [math]::Round($maxPwdAgeSpan.TotalDays, 0) } else { 0 }
-            $lockoutDurMin = if ($lockoutDurSpan) { [math]::Round($lockoutDurSpan.TotalMinutes, 0) } else { 0 }
-            $lockoutWinMin = if ($lockoutWinSpan) { [math]::Round($lockoutWinSpan.TotalMinutes, 0) } else { 0 }
-
-            $minPwdLength   = if ($domProps["minPwdLength"].Value) { $domProps["minPwdLength"].Value } else { 0 }
-            $pwdHistoryLen  = if ($domProps["pwdHistoryLength"].Value) { $domProps["pwdHistoryLength"].Value } else { 0 }
-            $pwdProperties  = if ($domProps["pwdProperties"].Value) { [int]$domProps["pwdProperties"].Value } else { 0 }
-            $complexityOn   = ($pwdProperties -band 1) -eq 1
-            $reversibleOn   = ($pwdProperties -band 16) -eq 1
-            $lockoutThresh  = if ($domProps["lockoutThreshold"].Value) { $domProps["lockoutThreshold"].Value } else { 0 }
-
-            $domainPolicyList = @(
-                [PSCustomObject]@{ $t["PropName"] = $t["DPO_MinLength"];  $t["PropValue"] = "$minPwdLength $($t['Characters'])" },
-                [PSCustomObject]@{ $t["PropName"] = $t["DPO_Complexity"]; $t["PropValue"] = if ($complexityOn) { "✔ $($t['Enabled'])" } else { "✖ $($t['Disabled'])" } },
-                [PSCustomObject]@{ $t["PropName"] = $t["DPO_MaxAge"];     $t["PropValue"] = if ($maxPwdAgeDays -gt 0) { "$maxPwdAgeDays $($t['Days'])" } else { $t["NeverExpires"] } },
-                [PSCustomObject]@{ $t["PropName"] = $t["DPO_MinAge"];     $t["PropValue"] = "$minPwdAgeDays $($t['Days'])" },
-                [PSCustomObject]@{ $t["PropName"] = $t["DPO_History"];    $t["PropValue"] = "$pwdHistoryLen $($t['Passwords'])" },
-                [PSCustomObject]@{ $t["PropName"] = $t["DPO_LockoutTh"];  $t["PropValue"] = if ($lockoutThresh -gt 0) { "$lockoutThresh $($t['InvalidAttempts'])" } else { $t["NoLockout"] } },
-                [PSCustomObject]@{ $t["PropName"] = $t["DPO_LockoutDur"]; $t["PropValue"] = if ($lockoutThresh -gt 0) { "$lockoutDurMin $($t['Minutes'])" } else { "-" } },
-                [PSCustomObject]@{ $t["PropName"] = $t["DPO_ObsWindow"];  $t["PropValue"] = if ($lockoutThresh -gt 0) { "$lockoutWinMin $($t['Minutes'])" } else { "-" } },
-                [PSCustomObject]@{ $t["PropName"] = $t["DPO_RevEncrypt"]; $t["PropValue"] = if ($reversibleOn) { "⚠️ $($t['Enabled']) ($($t['Unsafe']))" } else { "$($t['Disabled']) ($($t['Safe']))" } }
-            )
-
-            $script:cachedDomainPolicy = $domainPolicyList
-            $gridDomain.DataSource = [System.Collections.ArrayList]::new($domainPolicyList)
-
-            # 2. Fine-Grained Password Policies (PSO)
-            $psoContainer = [ADSI]"LDAP://CN=Password Settings Objects,CN=System,$defaultNC"
-            $psoSearcher = New-Object System.DirectoryServices.DirectorySearcher($psoContainer)
-            $psoSearcher.Filter = "(objectClass=msDS-PasswordSettings)"
-            $psoResults = $psoSearcher.FindAll()
-
-            $psoList = [System.Collections.ArrayList]::new()
-
-            foreach ($p in $psoResults) {
-                $entry = $p.GetDirectoryEntry()
-                $pName = $entry.Properties["name"].Value
-                $precedence = $entry.Properties["msDS-PasswordSettingsPrecedence"].Value
-                $pComplexity = [bool]$entry.Properties["msDS-PasswordComplexityEnabled"].Value
-                $pMinLen = $entry.Properties["msDS-MinimumPasswordLength"].Value
-                $pHist = $entry.Properties["msDS-PasswordHistoryLength"].Value
-                $pLockThresh = $entry.Properties["msDS-LockoutThreshold"].Value
-
-                $pMaxAgeSpan = Convert-LargeIntToTimeSpan $entry.Properties["msDS-MaximumPasswordAge"].Value
-                $pMinAgeSpan = Convert-LargeIntToTimeSpan $entry.Properties["msDS-MinimumPasswordAge"].Value
-                $pLockDurSpan = Convert-LargeIntToTimeSpan $entry.Properties["msDS-LockoutDuration"].Value
-
-                $pMaxAge = if ($pMaxAgeSpan) { [math]::Round($pMaxAgeSpan.TotalDays, 1) } else { 0 }
-                $pMinAge = if ($pMinAgeSpan) { [math]::Round($pMinAgeSpan.TotalDays, 1) } else { 0 }
-                $pLockDur = if ($pLockDurSpan) { [math]::Round($pLockDurSpan.TotalMinutes, 0) } else { 0 }
-
-                $appliesTo = @()
-                foreach ($app in $entry.Properties["msDS-PSOAppliesTo"]) {
-                    $appliesTo += ($app -split ",*..=")[1]
+            if ($asDays) {
+                if ($ts.TotalDays -ge 1) {
+                    $unit = if ($script:CurrentLang -eq "DE") { "Tage" } else { "Days" }
+                    return "{0:N1} $unit" -f $ts.TotalDays
+                } else {
+                    $unit = if ($script:CurrentLang -eq "DE") { "Stunden" } else { "Hours" }
+                    return "{0:N1} $unit" -f $ts.TotalHours
                 }
-                $appliesToStr = if ($appliesTo.Count -gt 0) { $appliesTo -join ", " } else { $t["NoneAssigned"] }
-
-                [void]$psoList.Add([PSCustomObject]@{
-                    $t["PsoName"]          = $pName
-                    $t["PsoPrecedence"]    = $precedence
-                    $t["PsoMinLength"]     = $pMinLen
-                    $t["PsoComplexity"]    = if ($pComplexity) { $t["Yes"] } else { $t["No"] }
-                    $t["PsoMaxAge"]        = $pMaxAge
-                    $t["PsoMinAge"]        = $pMinAge
-                    $t["PsoHistory"]       = $pHist
-                    $t["PsoLockoutThresh"] = $pLockThresh
-                    $t["PsoLockoutDur"]    = $pLockDur
-                    $t["PsoAppliesTo"]     = $appliesToStr
-                })
+            } else {
+                if ($ts.TotalMinutes -ge 60) {
+                    $unit = if ($script:CurrentLang -eq "DE") { "Stunden" } else { "Hours" }
+                    return "{0:N1} $unit" -f $ts.TotalHours
+                } else {
+                    $unit = if ($script:CurrentLang -eq "DE") { "Minuten" } else { "Minutes" }
+                    return "{0:N0} $unit" -f $ts.TotalMinutes
+                }
             }
-
-            $sortedPSO = $psoList | Sort-Object { $_.($t["PsoPrecedence"]) }
-            $script:cachedPSOs = [System.Collections.ArrayList]::new($sortedPSO)
-            $gridPSO.DataSource = $script:cachedPSOs
-
-            $lblStatus.Text = "$($t["StatusDone"]) (PSOs: $($psoList.Count))"
         } catch {
-            $lblStatus.Text = "Fehler: " + $_.Exception.Message
+            return $val.ToString()
         }
     }
 
-    $btnUserCheck.Add_Click({
-        $username = $txtUserSearch.Text.Trim()
-        if ([string]::IsNullOrWhiteSpace($username)) { return }
+    $script:cachedDomainPolicies = @()
+    $script:cachedPSOs = @()
+    $script:cachedUserPolicy = @()
+
+    # --- LADE-LOGIK ---
+    $loadPolicies = {
+        $lblStatus.Text = $t["StatusSearching"]
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $script:cachedDomainPolicies = @()
+        $script:cachedPSOs = @()
 
         try {
-            $rootDSE = [ADSI]"LDAP://RootDSE"
-            $defaultNC = $rootDSE.defaultNamingContext
-            $uSearcher = New-Object System.DirectoryServices.DirectorySearcher([ADSI]"LDAP://$defaultNC")
-            $uSearcher.Filter = "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$username))"
-            $uSearcher.PropertiesToLoad.Add("msDS-ResultantPSO") | Out-Null
-            $uSearcher.PropertiesToLoad.Add("distinguishedName") | Out-Null
-            $uSearcher.PropertiesToLoad.Add("displayName") | Out-Null
+            # 1. Standard Domain Password Policy
+            $rootEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://RootDSE")
+            $defNamingContext = $rootEntry.defaultNamingContext.ToString()
+            $domEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$defNamingContext")
 
+            $minPwdAge      = & $convertTimeSpan $domEntry.Properties["minPwdAge"].Value $true
+            $maxPwdAge      = & $convertTimeSpan $domEntry.Properties["maxPwdAge"].Value $true
+            $minPwdLength   = if ($domEntry.Properties["minPwdLength"].Value) { "$($domEntry.Properties['minPwdLength'].Value) " + (if ($script:CurrentLang -eq "DE") { "Zeichen" } else { "Characters" }) } else { "0" }
+            $pwdHistory     = if ($domEntry.Properties["pwdHistoryLength"].Value) { "$($domEntry.Properties['pwdHistoryLength'].Value) " + (if ($script:CurrentLang -eq "DE") { "Kennwörter gespeichert" } else { "Passwords remembered" }) } else { "0" }
+            
+            $pwdProps = [int]($domEntry.Properties["pwdProperties"].Value)
+            $complexityEnabled = ($pwdProps -band 1) -eq 1
+            $reversibleEnc     = ($pwdProps -band 16) -eq 16
+
+            $lockThreshold = if ($domEntry.Properties["lockoutThreshold"].Value) { "$($domEntry.Properties['lockoutThreshold'].Value) " + (if ($script:CurrentLang -eq "DE") { "ungültige Versuche" } else { "Invalid attempts" }) } else { if ($script:CurrentLang -eq "DE") { "0 (Deaktiviert)" } else { "0 (Disabled)" } }
+            $lockDuration  = & $convertTimeSpan $domEntry.Properties["lockoutDuration"].Value $false
+            $lockWindow    = & $convertTimeSpan $domEntry.Properties["lockOutObservationWindow"].Value $false
+
+            $domList = @(
+                [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"]; $t["PropName"] = $t["PropMinAge"]; $t["PropValue"] = $minPwdAge },
+                [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"]; $t["PropName"] = $t["PropMaxAge"]; $t["PropValue"] = $maxPwdAge },
+                [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"]; $t["PropName"] = $t["PropMinLength"]; $t["PropValue"] = $minPwdLength },
+                [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"]; $t["PropName"] = $t["PropHistory"]; $t["PropValue"] = $pwdHistory },
+                [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"]; $t["PropName"] = $t["PropComplexity"]; $t["PropValue"] = if ($complexityEnabled) { $t["ValActive"] } else { $t["ValDisabled"] } },
+                [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"]; $t["PropName"] = $t["PropReversible"]; $t["PropValue"] = if ($reversibleEnc) { $t["ValActiveInsecure"] } else { $t["ValDisabledSecure"] } },
+                [PSCustomObject]@{ $t["PropCategory"] = $t["CatLockout"];  $t["PropName"] = $t["PropThreshold"]; $t["PropValue"] = $lockThreshold },
+                [PSCustomObject]@{ $t["PropCategory"] = $t["CatLockout"];  $t["PropName"] = $t["PropDuration"]; $t["PropValue"] = $lockDuration },
+                [PSCustomObject]@{ $t["PropCategory"] = $t["CatLockout"];  $t["PropName"] = $t["PropObservation"]; $t["PropValue"] = $lockWindow }
+            )
+
+            $script:cachedDomainPolicies = $domList
+            $gridDomain.DataSource = [System.Collections.ArrayList]::new($domList)
+
+            # 2. Fine-Grained Password Policies (PSO) FIX: Direkte Container-Suche + Globaler Fallback
+            $psoList = @()
+            $psoContainerPath = "LDAP://CN=Password Settings Objects,CN=System,$defNamingContext"
+            $psoSearcher = $null
+            
+            try {
+                $psoEntry = [System.DirectoryServices.DirectoryEntry]::new($psoContainerPath)
+                $psoSearcher = [System.DirectoryServices.DirectorySearcher]::new($psoEntry)
+                $psoSearcher.Filter = "(objectClass=msDS-PasswordSettings)"
+                $psoSearcher.SearchScope = [System.DirectoryServices.SearchScope]::OneLevel
+                $psoResults = $psoSearcher.FindAll()
+            } catch {
+                # Fallback: Subtree Suche im gesamten Domänen-Root
+                $psoSearcher = [System.DirectoryServices.DirectorySearcher]::new($domEntry)
+                $psoSearcher.Filter = "(objectClass=msDS-PasswordSettings)"
+                $psoSearcher.SearchScope = [System.DirectoryServices.SearchScope]::Subtree
+                $psoResults = $psoSearcher.FindAll()
+            }
+
+            if ($psoResults -and $psoResults.Count -gt 0) {
+                foreach ($res in $psoResults) {
+                    $prop = $res.Properties
+                    $name = if ($prop["name"].Count -gt 0) { $prop["name"][0] } else { "Unbenannt" }
+                    $prec = if ($prop["msds-passwordsettingsprecedence"].Count -gt 0) { $prop["msds-passwordsettingsprecedence"][0] } else { "N/A" }
+                    $pMinLen = if ($prop["msds-minimumpasswordlength"].Count -gt 0) { "$($prop['msds-minimumpasswordlength'][0]) " + (if ($script:CurrentLang -eq "DE") { "Zeichen" } else { "Characters" }) } else { "N/A" }
+                    $pHist = if ($prop["msds-passwordhistorylength"].Count -gt 0) { "$($prop['msds-passwordhistorylength'][0])" } else { "0" }
+                    $pCompl = if ($prop["msds-passwordcomplexityenabled"].Count -gt 0) { [bool]$prop["msds-passwordcomplexityenabled"][0] } else { $false }
+                    $pRevers = if ($prop["msds-passwordreversibleencryptionenabled"].Count -gt 0) { [bool]$prop["msds-passwordreversibleencryptionenabled"][0] } else { $false }
+                    
+                    $pMinAge = if ($prop["msds-minpasswordage"].Count -gt 0) { & $convertTimeSpan $prop["msds-minpasswordage"][0] $true } else { "N/A" }
+                    $pMaxAge = if ($prop["msds-maxpasswordage"].Count -gt 0) { & $convertTimeSpan $prop["msds-maxpasswordage"][0] $true } else { "N/A" }
+                    
+                    $pLockThresh = if ($prop["msds-lockoutthreshold"].Count -gt 0) { "$($prop['msds-lockoutthreshold'][0]) " + (if ($script:CurrentLang -eq "DE") { "Versuche" } else { "Attempts" }) } else { "0" }
+                    $pLockDur = if ($prop["msds-lockoutduration"].Count -gt 0) { & $convertTimeSpan $prop["msds-lockoutduration"][0] $false } else { "N/A" }
+                    $pLockObs = if ($prop["msds-lockoutobservationwindow"].Count -gt 0) { & $convertTimeSpan $prop["msds-lockoutobservationwindow"][0] $false } else { "N/A" }
+
+                    $appliesTo = @()
+                    if ($prop["msds-psoappliesto"].Count -gt 0) {
+                        foreach ($appDn in $prop["msds-psoappliesto"]) {
+                            if ($appDn -match "CN=([^,]+)") { $appliesTo += $Matches[1] } else { $appliesTo += $appDn }
+                        }
+                    }
+                    $appliesToStr = if ($appliesTo.Count -gt 0) { $appliesTo -join ", " } else { if ($script:CurrentLang -eq "DE") { "Niemand (Keine Zuweisung)" } else { "None (No assignment)" } }
+
+                    $psoList += [PSCustomObject]@{
+                        $t["PsoName"]        = $name
+                        $t["PsoPrecedence"]  = $prec
+                        $t["PsoMinLength"]   = $pMinLen
+                        $t["PsoHistory"]     = $pHist
+                        $t["PsoComplexity"]  = if ($pCompl) { $t["ValActive"] } else { $t["ValDisabled"] }
+                        $t["PsoMinAge"]      = $pMinAge
+                        $t["PsoMaxAge"]      = $pMaxAge
+                        $t["PsoThreshold"]   = $pLockThresh
+                        $t["PsoDuration"]    = $pLockDur
+                        $t["PsoAppliesTo"]   = $appliesToStr
+                    }
+                }
+            }
+
+            $script:cachedPSOs = $psoList
+            $gridPSO.DataSource = [System.Collections.ArrayList]::new($psoList)
+
+            $psoCount = $psoList.Count
+            $psoMsg = if ($script:CurrentLang -eq "DE") { "$psoCount Fine-Grained PSO(s) gefunden." } else { "$psoCount Fine-Grained PSO(s) found." }
+            $lblStatus.Text = "$($t['StatusResult']) $psoMsg"
+
+        } catch {
+            $lblStatus.Text = "$($t['StatusError']): $($_.Exception.Message)"
+        } finally {
+            $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        }
+    }
+
+    # --- BENUTZER-CHECK LOGIK ---
+    $checkUserAction = {
+        $uName = $txtUserCheck.Text.Trim()
+        if ([string]::IsNullOrWhiteSpace($uName)) {
+            [System.Windows.Forms.MessageBox]::Show($t["ErrUserEmpty"], "Info", "OK", "Warning")
+            return
+        }
+
+        $lblStatus.Text = $t["StatusSearching"]
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+
+        try {
+            $rootEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://RootDSE")
+            $defNamingContext = $rootEntry.defaultNamingContext.ToString()
+            $domEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$defNamingContext")
+            
+            $uSearcher = [System.DirectoryServices.DirectorySearcher]::new($domEntry)
+            $uSearcher.Filter = "(&(objectClass=user)(objectCategory=person)(|(sAMAccountName=$uName)(userPrincipalName=$uName)))"
+            $uSearcher.PropertiesToLoad.AddRange(@("distinguishedName", "sAMAccountName", "userPrincipalName", "msDS-ResultantPSO", "userAccountControl", "pwdLastSet"))
             $uRes = $uSearcher.FindOne()
+
             if (-not $uRes) {
-                [System.Windows.Forms.MessageBox]::Show($t["ErrUserNotFound"], "User Check", "OK", "Warning")
+                [System.Windows.Forms.MessageBox]::Show($t["ErrUserNotFound"], "AD Search", "OK", "Warning")
+                $lblStatus.Text = $t["ErrUserNotFound"]
                 return
             }
 
+            $uProps = $uRes.Properties
+            $foundSam = $uProps["samaccountname"][0]
+            $resultantPSO = if ($uProps["msds-resultantpso"].Count -gt 0) { $uProps["msds-resultantpso"][0] } else { $null }
+
             $userResultList = @()
-            $appliedPSO = $uRes.Properties["msds-resultantpso"]
-
-            if ($appliedPSO -and $appliedPSO.Count -gt 0) {
-                $psoDN = $appliedPSO[0]
-                $psoEntry = [ADSI]"LDAP://$psoDN"
-
-                $pName = $psoEntry.Properties["name"].Value
-                $pMinLen = $psoEntry.Properties["msDS-MinimumPasswordLength"].Value
-                $pComplexity = [bool]$psoEntry.Properties["msDS-PasswordComplexityEnabled"].Value
-                $pHist = $psoEntry.Properties["msDS-PasswordHistoryLength"].Value
-                $pLockThresh = $psoEntry.Properties["msDS-LockoutThreshold"].Value
-
-                $pMaxAgeSpan = Convert-LargeIntToTimeSpan $psoEntry.Properties["msDS-MaximumPasswordAge"].Value
-                $pMaxAge = if ($pMaxAgeSpan) { [math]::Round($pMaxAgeSpan.TotalDays, 1) } else { 0 }
+            if ($resultantPSO) {
+                # Liest die PSO-Werte aus
+                $psoEntry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$resultantPSO")
+                $psoName = $psoEntry.Properties["name"].Value
+                $pMinLen = "$($psoEntry.Properties['msDS-MinimumPasswordLength'].Value) " + (if ($script:CurrentLang -eq "DE") { "Zeichen" } else { "Characters" })
+                $pMinAge = & $convertTimeSpan $psoEntry.Properties["msDS-MinPasswordAge"].Value $true
+                $pMaxAge = & $convertTimeSpan $psoEntry.Properties["msDS-MaxPasswordAge"].Value $true
+                $pCompl  = if ([bool]$psoEntry.Properties["msDS-PasswordComplexityEnabled"].Value) { $t["ValActive"] } else { $t["ValDisabled"] }
+                $pThresh = "$($psoEntry.Properties['msDS-LockoutThreshold'].Value) " + (if ($script:CurrentLang -eq "DE") { "Versuche" } else { "Attempts" })
+                $pDur    = & $convertTimeSpan $psoEntry.Properties["msDS-LockoutDuration"].Value $false
 
                 $userResultList = @(
-                    [PSCustomObject]@{ $t["PropName"] = $t["Eff_Policy"];     $t["PropValue"] = "PSO: $pName" },
-                    [PSCustomObject]@{ $t["PropName"] = $t["DPO_MinLength"];  $t["PropValue"] = "$pMinLen $($t['Characters'])" },
-                    [PSCustomObject]@{ $t["PropName"] = $t["DPO_Complexity"]; $t["PropValue"] = if ($pComplexity) { $t["Enabled"] } else { $t["Disabled"] } },
-                    [PSCustomObject]@{ $t["PropName"] = $t["DPO_MaxAge"];     $t["PropValue"] = "$pMaxAge $($t['Days'])" },
-                    [PSCustomObject]@{ $t["PropName"] = $t["DPO_History"];    $t["PropValue"] = "$pHist $($t['Passwords'])" },
-                    [PSCustomObject]@{ $t["PropName"] = $t["Eff_LockoutTh"];  $t["PropValue"] = "$pLockThresh $($t['Attempts'])" },
-                    [PSCustomObject]@{ $t["PropName"] = $t["Eff_PSO_DN"];     $t["PropValue"] = $psoDN }
+                    [PSCustomObject]@{ $t["PropCategory"] = $t["CatAppliedPolicy"]; $t["PropName"] = $t["PropSource"]; $t["PropValue"] = "Fine-Grained PSO ($psoName)" },
+                    [PSCustomObject]@{ $t["PropCategory"] = $t["CatAppliedPolicy"]; $t["PropName"] = $t["PropDN"]; $t["PropValue"] = $resultantPSO },
+                    [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"];      $t["PropName"] = $t["PropMinLength"]; $t["PropValue"] = $pMinLen },
+                    [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"];      $t["PropName"] = $t["PropMinAge"]; $t["PropValue"] = $pMinAge },
+                    [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"];      $t["PropName"] = $t["PropMaxAge"]; $t["PropValue"] = $pMaxAge },
+                    [PSCustomObject]@{ $t["PropCategory"] = $t["CatPassword"];      $t["PropName"] = $t["PropComplexity"]; $t["PropValue"] = $pCompl },
+                    [PSCustomObject]@{ $t["PropCategory"] = $t["CatLockout"];       $t["PropName"] = $t["PropThreshold"]; $t["PropValue"] = $pThresh },
+                    [PSCustomObject]@{ $t["PropCategory"] = $t["CatLockout"];       $t["PropName"] = $t["PropDuration"]; $t["PropValue"] = $pDur }
                 )
             } else {
+                # Fallback: Default Domain Policy
                 $userResultList = @(
-                    [PSCustomObject]@{ $t["PropName"] = $t["Eff_Policy"]; $t["PropValue"] = $t["InheritedDomain"] }
-                ) + $script:cachedDomainPolicy
+                    [PSCustomObject]@{ $t["PropCategory"] = $t["CatAppliedPolicy"]; $t["PropName"] = $t["PropSource"]; $t["PropValue"] = $t["ValDefaultPolicy"] }
+                )
+                foreach ($row in $script:cachedDomainPolicies) {
+                    $userResultList += $row
+                }
             }
 
-            $gridUser.DataSource = [System.Collections.ArrayList]::new($userResultList)
-            $lblStatus.Text = "$($t["UserResultTitle"]) '$username' ($($t['StatusDone']))."
+            $script:cachedUserPolicy = $userResultList
+            $gridUserPolicy.DataSource = [System.Collections.ArrayList]::new($userResultList)
+            $lblStatus.Text = "$($t['StatusResultReady']): $foundSam"
+
         } catch {
-            [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Error", "OK", "Error")
+            $lblStatus.Text = "$($t['StatusError']): $($_.Exception.Message)"
+        } finally {
+            $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        }
+    }
+
+    # Event Wiring
+    $btnCheckUser.Add_Click($checkUserAction)
+    $txtUserCheck.Add_KeyDown({
+        if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+            $_.SuppressKeyPress = $true
+            & $checkUserAction
         }
     })
 
+    # Export CSV
     $btnExport.Add_Click({
         $sfd = New-Object System.Windows.Forms.SaveFileDialog
         $sfd.Filter = "CSV-Datei (*.csv)|*.csv"
-        $sfd.FileName = "AD_Password_Policies_$((Get-Date).ToString('yyyyMMdd')).csv"
-
+        $sfd.FileName = "AD_Password_Policies_Audit.csv"
         if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $exportData = @()
-            $defaultTypeStr = if ($lang -eq "EN") { "Default Domain Policy" } else { "Standard-Domänenrichtlinie" }
-            $psoTypeStr     = if ($lang -eq "EN") { "Fine-Grained PSO" } else { "Feingranulare PSO" }
-
-            foreach ($row in $script:cachedDomainPolicy) {
+            foreach ($row in $script:cachedDomainPolicies) {
                 $exportData += [PSCustomObject]@{
-                    "Typ / Type"               = $defaultTypeStr
-                    "Eigenschaft / Setting"    = $row.($t["PropName"])
-                    "Wert / Value"             = $row.($t["PropValue"])
+                    "Typ"         = "Default Domain Policy"
+                    "Eigenschaft" = $row.($t["PropName"])
+                    "Wert"        = $row.($t["PropValue"])
                 }
             }
             foreach ($row in $script:cachedPSOs) {
                 $exportData += [PSCustomObject]@{
-                    "Typ / Type"               = "$psoTypeStr ($($row.($t['PsoName'])))"
-                    "Eigenschaft / Setting"    = "Precedence: $($row.($t['PsoPrecedence'])), MinLen: $($row.($t['PsoMinLength']))"
-                    "Wert / Value"             = "AppliesTo: $($row.($t['PsoAppliesTo']))"
+                    "Typ"         = "Fine-Grained PSO ($($row.($t['PsoName'])))"
+                    "Eigenschaft" = "Precedence: $($row.($t['PsoPrecedence'])), MinLen: $($row.($t['PsoMinLength']))"
+                    "Wert"        = "AppliesTo: $($row.($t['PsoAppliesTo']))"
                 }
             }
             $exportData | Export-Csv -Path $sfd.FileName -NoTypeInformation -Delimiter ";" -Encoding UTF8
@@ -2303,7 +2279,6 @@ function Show-Tool11-PasswordPolicyAudit {
 
     [void]$form.ShowDialog()
 }
-
 # ==============================================================================
 # HAUPTLAUNCHER & DASHBOARD
 # ==============================================================================
