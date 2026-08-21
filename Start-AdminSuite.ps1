@@ -35,6 +35,7 @@ $ModuleFiles = @(
     "Tools/Tool09_ACLCompare.ps1",
     "Tools/Tool10_OUGroupFinder.ps1",
     "Tools/Tool11_PasswordPolicy.ps1",
+	"Tools/Tool12_UserPasswordAge.ps1",
     "GUI/MainWindow.ps1"
 )
 

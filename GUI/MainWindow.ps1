@@ -1,12 +1,12 @@
 ﻿<#
 ================================================================================
- GUI: HAUPTFENSTER, 3-SPALTEN HEADER & DASHBOARD
+ GUI: HAUPTFENSTER, 3-SPALTEN HEADER & DASHBOARD (INKL. TOOL 12)
 ================================================================================
 #>
 function Start-AdminSuiteMainWindow {
     $mainForm = New-Object System.Windows.Forms.Form
     $mainForm.Text = Get-Text "Title"
-    $mainForm.Size = New-Object System.Drawing.Size(980, 960)
+    $mainForm.Size = New-Object System.Drawing.Size(980, 1020)
     $mainForm.StartPosition = "CenterScreen"
     $mainForm.FormBorderStyle = "FixedDialog"
     $mainForm.MaximizeBox = $false
@@ -124,7 +124,7 @@ function Start-AdminSuiteMainWindow {
     # --- AD TOOLS GROUPBOX ---
     $grpAD = New-Object System.Windows.Forms.GroupBox
     $grpAD.Location = New-Object System.Drawing.Point(18, 490)
-    $grpAD.Size = New-Object System.Drawing.Size(935, 410)
+    $grpAD.Size = New-Object System.Drawing.Size(935, 465)
     $grpAD.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 9, [System.Drawing.FontStyle]::Bold)
     $mainForm.Controls.Add($grpAD)
 
@@ -148,6 +148,9 @@ function Start-AdminSuiteMainWindow {
 
     $btnTool11 = New-Object System.Windows.Forms.Button; $btnTool11.Location = "20, 334"; $btnTool11.Size = "895, 46"
     $btnTool11.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool11.Add_Click({ Show-Tool11-PasswordPolicyAudit }); $grpAD.Controls.Add($btnTool11)
+
+    $btnTool12 = New-Object System.Windows.Forms.Button; $btnTool12.Location = "20, 386"; $btnTool12.Size = "895, 46"
+    $btnTool12.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5); $btnTool12.Add_Click({ Open-ToolUserPasswordAge }); $grpAD.Controls.Add($btnTool12)
 
     # --- UI REFRESH FUNKTION ---
     function Update-UI {
@@ -197,6 +200,7 @@ $("{0,-12}: {1}" -f (Get-Text "LblDeviceId"), $(if ($localDeviceId.Length -gt 16
         $btnTool9.Text  = Get-Text "BtnTool9"
         $btnTool10.Text = Get-Text "BtnTool10"
         $btnTool11.Text = Get-Text "BtnTool11"
+        $btnTool12.Text = Get-Text "BtnTool12"
 
         $btnLangDE.BackColor = if ($script:CurrentLang -eq "DE") { [System.Drawing.Color]::FromArgb(37, 99, 235) } else { [System.Drawing.Color]::LightSteelBlue }
         $btnLangDE.ForeColor = if ($script:CurrentLang -eq "DE") { [System.Drawing.Color]::White } else { [System.Drawing.Color]::Black }
