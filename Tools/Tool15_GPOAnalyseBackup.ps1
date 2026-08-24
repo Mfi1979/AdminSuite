@@ -1,23 +1,26 @@
 <#
 ==================================================================================
- Tool 15: Active Directory GPO Enterprise Suite (Clean-Exit & Suite-kompatibel)
+ Tool 15: Active Directory GPO Enterprise Suite
+ Version: 1.5.2 (DPI- & Layout-optimiert, ASCII-only, Clean-Exit)
  
- Register 1: GPO Übersicht & Verlinkungs-Analyse
+ Register 1: GPO Uebersicht & Verlinkungs-Analyse
              - Schnelle ADSI/LDAP-Abfrage aller GPOs, WMI-Filter & OU-Verlinkungen
              - Spaltenbreiten automatisch an Inhalt angepasst (AllCells)
              - Spaltenbezeichnungen "Benutzer" und "Computer"
              - Farbliche Kennzeichnung:
                * [Blau/Lila] Default Domain Policy & Default Domain Controllers Policy
-               * [Grün] OK (Nur Computer aktiv ODER nur Benutzer aktiv)
-               * [Rot] Nicht OK (Beide aktiviert oder vollständig deaktiviert)
+               * [Gruen] OK (Nur Computer aktiv ODER nur Benutzer aktiv)
+               * [Rot] Nicht OK (Beide aktiviert oder vollstaendig deaktiviert)
              - Klickbare Spaltensortierung auf allen Spalten
-             - Master-Detail: Zeigt rechts alle Verlinkungsziele (OUs/Domäne)
+             - Master-Detail: Zeigt rechts alle Verlinkungsziele (OUs/Domaene)
+             - PowerShell- & Tool-Info-Dialog via Button
  
- Register 2: GPO Richtlinien-Einstellungen & Inspektor (Präziser XML-Parser)
-             - Bereinigte Spalte "Konfigurierter Wert" (exakte Werte ohne Explain-Texte)
-             - Vollständige Richtlinienerklärung rechts im Detailbereich
+ Register 2: GPO Richtlinien-Einstellungen & Inspektor (Praeziser XML-Parser)
+             - Bereinigte Spalte "Konfigurierter Wert" (reine Werte ohne Explain-Texte)
+             - Vollstaendige Richtlinienerklaerung rechts im Detailbereich
  
- Register 3: GPO Backup & Verknüpfungs-Audit
+ Register 3: GPO Backup & Verknuepfungs-Audit
+             - DPI-sichere 2-Zeilen-Kopfleiste (kein Abschneiden von Buttons/Texten)
              - Konfigurierbarer Ziel-Pfad mit Ordnerauswahl-Dialog
              - Einzelsicherung oder Gesamtsicherung aller GPOs
              - Datums- & Zeitstruktur: [Zielpfad]\[GPO-Name]\[JJJJMMTT_HHMM]
@@ -27,27 +30,30 @@
              - 2 beliebige GPOs gegeneinander vergleichen
              - Spalten: Bereich, Kategorie, Einstellung, Status GPO 1, Wert GPO 1, Status GPO 2, Wert GPO 2, Diff-Status
              - Erkennt Parameter- & Zahlenwert-Abweichungen (Gelb/Orange)
-             - Identische Einstellungen vollständig in GRÜN
+             - Identische Einstellungen vollstaendig in GRUEN
 ==================================================================================
 #>
 
+[System.Windows.Forms.Application]::EnableVisualStyles()
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.DirectoryServices
 Import-Module GroupPolicy -ErrorAction Stop
 
+$script:ToolVersion = "v1.5.2"
+
 function Show-Tool15 {
     [CmdletBinding()]
     param()
 
-    # --- Domänenprüfung ---
+    # --- Domaenenpruefung ---
     try {
         $domainInfo = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
         $domainDN = ([ADSI]"LDAP://RootDSE").defaultNamingContext.Value
         $domainName = $domainInfo.Name
     } catch {
         [System.Windows.Forms.MessageBox]::Show(
-            "Active Directory Domäne nicht erreichbar oder Computer nicht domänengebunden.",
+            "Active Directory Domaene nicht erreichbar oder Computer nicht domaenengebunden.",
             "Fehler",
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Error
@@ -57,34 +63,36 @@ function Show-Tool15 {
 
     # --- Hauptfenster ---
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName)"
-    $form.Size = New-Object System.Drawing.Size(1650, 920)
+    $form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - $script:ToolVersion"
+    $form.Size = New-Object System.Drawing.Size(1680, 930)
     $form.StartPosition = "CenterScreen"
     $form.MinimumSize = New-Object System.Drawing.Size(1250, 750)
+    $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
     $tabControl = New-Object System.Windows.Forms.TabControl
     $tabControl.Dock = [System.Windows.Forms.DockStyle]::Fill
 
     # =========================================================================
-    # REGISTER 1: GPO Übersicht & Verlinkungs-Analyse
+    # REGISTER 1: GPO Uebersicht & Verlinkungs-Analyse
     # =========================================================================
     $tabOverview = New-Object System.Windows.Forms.TabPage
-    $tabOverview.Text = "1. GPO Übersicht & Verlinkungs-Analyse"
+    $tabOverview.Text = "1. GPO Uebersicht & Verlinkungs-Analyse"
 
     $panelOverviewTop = New-Object System.Windows.Forms.Panel
     $panelOverviewTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelOverviewTop.Height = 65
+    $panelOverviewTop.Height = 78
     $panelOverviewTop.BackColor = [System.Drawing.Color]::FromArgb(245, 248, 252)
     $panelOverviewTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
+    # Zeile 1
     $lblViewFilter = New-Object System.Windows.Forms.Label
     $lblViewFilter.Text = "Ansicht:"
-    $lblViewFilter.Location = New-Object System.Drawing.Point(12, 22)
+    $lblViewFilter.Location = New-Object System.Drawing.Point(12, 16)
     $lblViewFilter.AutoSize = $true
     $lblViewFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboViewMode = New-Object System.Windows.Forms.ComboBox
-    $comboViewMode.Location = New-Object System.Drawing.Point(70, 19)
+    $comboViewMode.Location = New-Object System.Drawing.Point(72, 13)
     $comboViewMode.Size = New-Object System.Drawing.Size(220, 25)
     $comboViewMode.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
     [void]$comboViewMode.Items.Add("Alle GPOs")
@@ -94,29 +102,37 @@ function Show-Tool15 {
 
     $lblOverviewSearch = New-Object System.Windows.Forms.Label
     $lblOverviewSearch.Text = "Suche:"
-    $lblOverviewSearch.Location = New-Object System.Drawing.Point(305, 22)
+    $lblOverviewSearch.Location = New-Object System.Drawing.Point(305, 16)
     $lblOverviewSearch.AutoSize = $true
     $lblOverviewSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtOverviewSearch = New-Object System.Windows.Forms.TextBox
-    $txtOverviewSearch.Location = New-Object System.Drawing.Point(355, 19)
+    $txtOverviewSearch.Location = New-Object System.Drawing.Point(355, 13)
     $txtOverviewSearch.Size = New-Object System.Drawing.Size(180, 25)
 
     $btnRefreshOverview = New-Object System.Windows.Forms.Button
-    $btnRefreshOverview.Text = "🔄 Neu laden"
-    $btnRefreshOverview.Location = New-Object System.Drawing.Point(545, 17)
-    $btnRefreshOverview.Size = New-Object System.Drawing.Size(105, 28)
+    $btnRefreshOverview.Text = "Neu laden"
+    $btnRefreshOverview.Location = New-Object System.Drawing.Point(545, 10)
+    $btnRefreshOverview.Size = New-Object System.Drawing.Size(100, 30)
     $btnRefreshOverview.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
 
     $btnExportOverviewCsv = New-Object System.Windows.Forms.Button
-    $btnExportOverviewCsv.Text = "📁 CSV Export"
-    $btnExportOverviewCsv.Location = New-Object System.Drawing.Point(660, 17)
-    $btnExportOverviewCsv.Size = New-Object System.Drawing.Size(110, 28)
+    $btnExportOverviewCsv.Text = "CSV Export"
+    $btnExportOverviewCsv.Location = New-Object System.Drawing.Point(652, 10)
+    $btnExportOverviewCsv.Size = New-Object System.Drawing.Size(110, 30)
     $btnExportOverviewCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
+    $btnPsInfo = New-Object System.Windows.Forms.Button
+    $btnPsInfo.Text = "PS- & Tool-Info"
+    $btnPsInfo.Location = New-Object System.Drawing.Point(768, 10)
+    $btnPsInfo.Size = New-Object System.Drawing.Size(120, 30)
+    $btnPsInfo.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 245)
+    $btnPsInfo.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+
+    # Zeile 2: Legende
     $lblLegendOverview = New-Object System.Windows.Forms.Label
-    $lblLegendOverview.Text = "Legende:  [Blau/Lila] Default GPO  |  [Grün] OK  |  [Rot] Nicht OK"
-    $lblLegendOverview.Location = New-Object System.Drawing.Point(785, 22)
+    $lblLegendOverview.Text = "Legende:  [Blau/Lila] Default GPO  |  [Gruen] OK (Nur Computer oder Benutzer)  |  [Rot] Nicht OK (Beide aktiv / inaktiv)"
+    $lblLegendOverview.Location = New-Object System.Drawing.Point(12, 48)
     $lblLegendOverview.AutoSize = $true
     $lblLegendOverview.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
 
@@ -126,6 +142,7 @@ function Show-Tool15 {
     $panelOverviewTop.Controls.Add($txtOverviewSearch)
     $panelOverviewTop.Controls.Add($btnRefreshOverview)
     $panelOverviewTop.Controls.Add($btnExportOverviewCsv)
+    $panelOverviewTop.Controls.Add($btnPsInfo)
     $panelOverviewTop.Controls.Add($lblLegendOverview)
 
     $splitOverview = New-Object System.Windows.Forms.SplitContainer
@@ -139,7 +156,7 @@ function Show-Tool15 {
     $panelOvLeft.Padding = New-Object System.Windows.Forms.Padding(10, 8, 4, 10)
 
     $lblOvMasterTitle = New-Object System.Windows.Forms.Label
-    $lblOvMasterTitle.Text = "Gruppenrichtlinien der Domäne (Klick auf Spaltenkopf zum Sortieren):"
+    $lblOvMasterTitle.Text = "Gruppenrichtlinien der Domaene (Klick auf Spaltenkopf zum Sortieren):"
     $lblOvMasterTitle.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblOvMasterTitle.Height = 25
     $lblOvMasterTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -171,7 +188,7 @@ function Show-Tool15 {
     $panelOvRight.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 10)
 
     $lblOvDetailsTitle = New-Object System.Windows.Forms.Label
-    $lblOvDetailsTitle.Text = "Verlinkungsziele der GPO (OUs / Domäne):"
+    $lblOvDetailsTitle.Text = "Verlinkungsziele der GPO (OUs / Domaene):"
     $lblOvDetailsTitle.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblOvDetailsTitle.Height = 25
     $lblOvDetailsTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -207,45 +224,46 @@ function Show-Tool15 {
 
     $panelSettingsTop = New-Object System.Windows.Forms.Panel
     $panelSettingsTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelSettingsTop.Height = 55
+    $panelSettingsTop.Height = 65
     $panelSettingsTop.BackColor = [System.Drawing.Color]::FromArgb(242, 245, 250)
+    $panelSettingsTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
     $lblGpo = New-Object System.Windows.Forms.Label
     $lblGpo.Text = "GPO:"
-    $lblGpo.Location = New-Object System.Drawing.Point(12, 17)
+    $lblGpo.Location = New-Object System.Drawing.Point(12, 20)
     $lblGpo.AutoSize = $true
     $lblGpo.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboGpo = New-Object System.Windows.Forms.ComboBox
-    $comboGpo.Location = New-Object System.Drawing.Point(52, 14)
-    $comboGpo.Size = New-Object System.Drawing.Size(340, 25)
+    $comboGpo.Location = New-Object System.Drawing.Point(55, 17)
+    $comboGpo.Size = New-Object System.Drawing.Size(360, 25)
     $comboGpo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
     $lblFilter = New-Object System.Windows.Forms.Label
     $lblFilter.Text = "Suche:"
-    $lblFilter.Location = New-Object System.Drawing.Point(405, 17)
+    $lblFilter.Location = New-Object System.Drawing.Point(425, 20)
     $lblFilter.AutoSize = $true
     $lblFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtFilter = New-Object System.Windows.Forms.TextBox
-    $txtFilter.Location = New-Object System.Drawing.Point(455, 14)
+    $txtFilter.Location = New-Object System.Drawing.Point(475, 17)
     $txtFilter.Size = New-Object System.Drawing.Size(200, 25)
 
     $btnLoadSettings = New-Object System.Windows.Forms.Button
     $btnLoadSettings.Text = "Laden"
-    $btnLoadSettings.Location = New-Object System.Drawing.Point(665, 12)
-    $btnLoadSettings.Size = New-Object System.Drawing.Size(90, 28)
+    $btnLoadSettings.Location = New-Object System.Drawing.Point(685, 15)
+    $btnLoadSettings.Size = New-Object System.Drawing.Size(95, 30)
     $btnLoadSettings.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
 
     $btnExportCsv = New-Object System.Windows.Forms.Button
     $btnExportCsv.Text = "CSV Export"
-    $btnExportCsv.Location = New-Object System.Drawing.Point(765, 12)
-    $btnExportCsv.Size = New-Object System.Drawing.Size(100, 28)
+    $btnExportCsv.Location = New-Object System.Drawing.Point(788, 15)
+    $btnExportCsv.Size = New-Object System.Drawing.Size(105, 30)
     $btnExportCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
     $lblSettingsStatus = New-Object System.Windows.Forms.Label
     $lblSettingsStatus.Text = "Bereit."
-    $lblSettingsStatus.Location = New-Object System.Drawing.Point(880, 18)
+    $lblSettingsStatus.Location = New-Object System.Drawing.Point(905, 21)
     $lblSettingsStatus.AutoSize = $true
     $lblSettingsStatus.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
 
@@ -295,8 +313,8 @@ function Show-Tool15 {
     [void]$gridSettings.Columns.Add("colName", "Einstellung (Name)")
     [void]$gridSettings.Columns.Add("colValue", "Konfigurierter Wert")
     [void]$gridSettings.Columns.Add("colState", "Status")
-    [void]$gridSettings.Columns.Add("colSupported", "Unterstützt ab")
-    [void]$gridSettings.Columns.Add("colExplain", "Erklärung")
+    [void]$gridSettings.Columns.Add("colSupported", "Unterstuetzt ab")
+    [void]$gridSettings.Columns.Add("colExplain", "Erklaerung")
     [void]$gridSettings.Columns.Add("colGpo", "GPO")
 
     $gridSettings.Columns["colScope"].Width = 90
@@ -312,13 +330,13 @@ function Show-Tool15 {
     $panelSettingsLeft.Controls.Add($lblTableTitle)
     $splitSettings.Panel1.Controls.Add($panelSettingsLeft)
 
-    # Rechte Seite Tab 2 (Detailbereich für Beschreibung)
+    # Rechte Seite Tab 2 (Detailbereich)
     $panelSettingsRight = New-Object System.Windows.Forms.Panel
     $panelSettingsRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelSettingsRight.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 10)
 
     $lblDescHeader = New-Object System.Windows.Forms.Label
-    $lblDescHeader.Text = "Erläuterung & Richtlinien-Details:"
+    $lblDescHeader.Text = "Erlaeuterung & Richtlinien-Details:"
     $lblDescHeader.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblDescHeader.Height = 25
     $lblDescHeader.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -339,53 +357,55 @@ function Show-Tool15 {
     $tabSettings.Controls.Add($panelSettingsTop)
 
     # =========================================================================
-    # REGISTER 3: GPO Backup & Verknüpfungs-Audit
+    # REGISTER 3: GPO Backup & Verknuepfungs-Audit (DPI-sichere 2-Zeilen-Leiste)
     # =========================================================================
     $tabBackup = New-Object System.Windows.Forms.TabPage
-    $tabBackup.Text = "3. GPO Backup & Verknüpfungs-Status"
+    $tabBackup.Text = "3. GPO Backup & Verknuepfungs-Status"
 
     $panelBackupTop = New-Object System.Windows.Forms.Panel
     $panelBackupTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelBackupTop.Height = 85
+    $panelBackupTop.Height = 110
     $panelBackupTop.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
     $panelBackupTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
+    # Zeile 1: Pfad & Durchsuchen
     $lblTargetPath = New-Object System.Windows.Forms.Label
     $lblTargetPath.Text = "Backup Ziel-Pfad:"
-    $lblTargetPath.Location = New-Object System.Drawing.Point(12, 14)
+    $lblTargetPath.Location = New-Object System.Drawing.Point(12, 18)
     $lblTargetPath.AutoSize = $true
     $lblTargetPath.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtBackupTargetDir = New-Object System.Windows.Forms.TextBox
-    $txtBackupTargetDir.Location = New-Object System.Drawing.Point(125, 12)
-    $txtBackupTargetDir.Size = New-Object System.Drawing.Size(430, 25)
+    $txtBackupTargetDir.Location = New-Object System.Drawing.Point(135, 15)
+    $txtBackupTargetDir.Size = New-Object System.Drawing.Size(480, 25)
     $txtBackupTargetDir.Text = "C:\Install\Backup\GPO"
 
     $btnBrowseFolder = New-Object System.Windows.Forms.Button
-    $btnBrowseFolder.Text = "📁 Durchsuchen..."
-    $btnBrowseFolder.Location = New-Object System.Drawing.Point(565, 10)
-    $btnBrowseFolder.Size = New-Object System.Drawing.Size(125, 28)
+    $btnBrowseFolder.Text = "Durchsuchen..."
+    $btnBrowseFolder.Location = New-Object System.Drawing.Point(625, 12)
+    $btnBrowseFolder.Size = New-Object System.Drawing.Size(125, 30)
 
+    # Zeile 2: Aktionen & Buttons (Großzügige Breiten gegen Abschneiden)
     $btnLoadGpos = New-Object System.Windows.Forms.Button
-    $btnLoadGpos.Text = "🔄 GPO-Liste laden"
-    $btnLoadGpos.Location = New-Object System.Drawing.Point(12, 48)
-    $btnLoadGpos.Size = New-Object System.Drawing.Size(140, 30)
+    $btnLoadGpos.Text = "GPO-Liste laden"
+    $btnLoadGpos.Location = New-Object System.Drawing.Point(12, 56)
+    $btnLoadGpos.Size = New-Object System.Drawing.Size(140, 34)
 
     $btnBackupSelected = New-Object System.Windows.Forms.Button
-    $btnBackupSelected.Text = "💾 Ausgewählte GPO sichern"
-    $btnBackupSelected.Location = New-Object System.Drawing.Point(160, 48)
-    $btnBackupSelected.Size = New-Object System.Drawing.Size(190, 30)
+    $btnBackupSelected.Text = "Ausgewaehlte GPO sichern"
+    $btnBackupSelected.Location = New-Object System.Drawing.Point(160, 56)
+    $btnBackupSelected.Size = New-Object System.Drawing.Size(220, 34)
     $btnBackupSelected.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
     $btnBackupAll = New-Object System.Windows.Forms.Button
-    $btnBackupAll.Text = "📦 ALLE GPOs sichern"
-    $btnBackupAll.Location = New-Object System.Drawing.Point(360, 48)
-    $btnBackupAll.Size = New-Object System.Drawing.Size(160, 30)
+    $btnBackupAll.Text = "ALLE GPOs sichern"
+    $btnBackupAll.Location = New-Object System.Drawing.Point(390, 56)
+    $btnBackupAll.Size = New-Object System.Drawing.Size(180, 34)
     $btnBackupAll.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230)
 
     $lblBackupNote = New-Object System.Windows.Forms.Label
     $lblBackupNote.Text = "Format: [Zielpfad]\[Name der GPO]\[JJJJMMTT_HHMM]"
-    $lblBackupNote.Location = New-Object System.Drawing.Point(535, 54)
+    $lblBackupNote.Location = New-Object System.Drawing.Point(585, 65)
     $lblBackupNote.AutoSize = $true
     $lblBackupNote.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
 
@@ -402,14 +422,14 @@ function Show-Tool15 {
     $panelBackupMain.Padding = New-Object System.Windows.Forms.Padding(10)
 
     $lblGpoGrid = New-Object System.Windows.Forms.Label
-    $lblGpoGrid.Text = "1. Gruppenrichtlinien der Domäne:"
+    $lblGpoGrid.Text = "1. Gruppenrichtlinien der Domaene:"
     $lblGpoGrid.Location = New-Object System.Drawing.Point(10, 5)
     $lblGpoGrid.AutoSize = $true
     $lblGpoGrid.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $gridGpos = New-Object System.Windows.Forms.DataGridView
     $gridGpos.Location = New-Object System.Drawing.Point(10, 28)
-    $gridGpos.Size = New-Object System.Drawing.Size(780, 690)
+    $gridGpos.Size = New-Object System.Drawing.Size(780, 670)
     $gridGpos.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $gridGpos.ReadOnly = $true
     $gridGpos.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::AllCells
@@ -420,7 +440,7 @@ function Show-Tool15 {
     $gridGpos.BackgroundColor = [System.Drawing.Color]::White
 
     $lblLinks = New-Object System.Windows.Forms.Label
-    $lblLinks.Text = "2. Verknüpfungs-Ziele (OUs / Sites):"
+    $lblLinks.Text = "2. Verknuepfungs-Ziele (OUs / Sites):"
     $lblLinks.Location = New-Object System.Drawing.Point(805, 5)
     $lblLinks.AutoSize = $true
     $lblLinks.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -436,14 +456,14 @@ function Show-Tool15 {
     $gridLinks.BackgroundColor = [System.Drawing.Color]::White
 
     $lblLog = New-Object System.Windows.Forms.Label
-    $lblLog.Text = "3. Backup- & Aktivitäts-Protokoll:"
+    $lblLog.Text = "3. Backup- & Aktivitaets-Protokoll:"
     $lblLog.Location = New-Object System.Drawing.Point(805, 308)
     $lblLog.AutoSize = $true
     $lblLog.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtLog = New-Object System.Windows.Forms.TextBox
     $txtLog.Location = New-Object System.Drawing.Point(805, 330)
-    $txtLog.Size = New-Object System.Drawing.Size(705, 388)
+    $txtLog.Size = New-Object System.Drawing.Size(705, 368)
     $txtLog.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $txtLog.Multiline = $true
     $txtLog.ReadOnly = $true
@@ -469,54 +489,54 @@ function Show-Tool15 {
 
     $panelCompareTop = New-Object System.Windows.Forms.Panel
     $panelCompareTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelCompareTop.Height = 60
+    $panelCompareTop.Height = 70
     $panelCompareTop.BackColor = [System.Drawing.Color]::FromArgb(242, 245, 250)
     $panelCompareTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
     $lblGpo1 = New-Object System.Windows.Forms.Label
     $lblGpo1.Text = "GPO 1 (Basis):"
-    $lblGpo1.Location = New-Object System.Drawing.Point(12, 18)
+    $lblGpo1.Location = New-Object System.Drawing.Point(12, 22)
     $lblGpo1.AutoSize = $true
     $lblGpo1.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboGpo1 = New-Object System.Windows.Forms.ComboBox
-    $comboGpo1.Location = New-Object System.Drawing.Point(105, 15)
+    $comboGpo1.Location = New-Object System.Drawing.Point(105, 18)
     $comboGpo1.Size = New-Object System.Drawing.Size(260, 25)
     $comboGpo1.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
     $lblGpo2 = New-Object System.Windows.Forms.Label
     $lblGpo2.Text = "GPO 2 (Vergleich):"
-    $lblGpo2.Location = New-Object System.Drawing.Point(380, 18)
+    $lblGpo2.Location = New-Object System.Drawing.Point(380, 22)
     $lblGpo2.AutoSize = $true
     $lblGpo2.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboGpo2 = New-Object System.Windows.Forms.ComboBox
-    $comboGpo2.Location = New-Object System.Drawing.Point(495, 15)
+    $comboGpo2.Location = New-Object System.Drawing.Point(500, 18)
     $comboGpo2.Size = New-Object System.Drawing.Size(260, 25)
     $comboGpo2.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
     $btnCompare = New-Object System.Windows.Forms.Button
-    $btnCompare.Text = "⚖️ Vergleichen"
-    $btnCompare.Location = New-Object System.Drawing.Point(770, 13)
-    $btnCompare.Size = New-Object System.Drawing.Size(120, 28)
+    $btnCompare.Text = "Vergleichen"
+    $btnCompare.Location = New-Object System.Drawing.Point(775, 16)
+    $btnCompare.Size = New-Object System.Drawing.Size(110, 30)
     $btnCompare.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
 
     $chkOnlyDiffs = New-Object System.Windows.Forms.CheckBox
     $chkOnlyDiffs.Text = "Nur Unterschiede anzeigen"
-    $chkOnlyDiffs.Location = New-Object System.Drawing.Point(905, 17)
+    $chkOnlyDiffs.Location = New-Object System.Drawing.Point(900, 21)
     $chkOnlyDiffs.AutoSize = $true
     $chkOnlyDiffs.Checked = $true
     $chkOnlyDiffs.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $btnExportCompareCsv = New-Object System.Windows.Forms.Button
-    $btnExportCompareCsv.Text = "📁 Diff CSV Export"
-    $btnExportCompareCsv.Location = New-Object System.Drawing.Point(1085, 13)
-    $btnExportCompareCsv.Size = New-Object System.Drawing.Size(130, 28)
+    $btnExportCompareCsv.Text = "Diff CSV Export"
+    $btnExportCompareCsv.Location = New-Object System.Drawing.Point(1090, 16)
+    $btnExportCompareCsv.Size = New-Object System.Drawing.Size(125, 30)
     $btnExportCompareCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
     $lblCompareStatus = New-Object System.Windows.Forms.Label
-    $lblCompareStatus.Text = "Wählen Sie zwei GPOs für den Vergleich."
-    $lblCompareStatus.Location = New-Object System.Drawing.Point(1230, 18)
+    $lblCompareStatus.Text = "Waehlen Sie zwei GPOs fuer den Vergleich."
+    $lblCompareStatus.Location = New-Object System.Drawing.Point(1230, 22)
     $lblCompareStatus.AutoSize = $true
     $lblCompareStatus.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
 
@@ -534,7 +554,7 @@ function Show-Tool15 {
     $panelCompareMain.Padding = New-Object System.Windows.Forms.Padding(10, 8, 10, 10)
 
     $lblCompareLegend = New-Object System.Windows.Forms.Label
-    $lblCompareLegend.Text = "Legende:  [Grün] Identische Einstellung  |  [Gelb/Orange] Abweichender Wert / Status  |  [Rot] Nur in GPO 1  |  [Blau] Nur in GPO 2"
+    $lblCompareLegend.Text = "Legende:  [Gruen] Identische Einstellung  |  [Gelb/Orange] Abweichender Wert / Status  |  [Rot] Nur in GPO 1  |  [Blau] Nur in GPO 2"
     $lblCompareLegend.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblCompareLegend.Height = 22
     $lblCompareLegend.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
@@ -585,14 +605,14 @@ function Show-Tool15 {
     $tabControl.TabPages.Add($tabCompare)
     $form.Controls.Add($tabControl)
 
-    # Lokale Datencontainer (innerhalb der Funktion gekapselt)
+    # Lokale Datencontainer
     $rawOverviewList = [System.Collections.Generic.List[PSCustomObject]]::new()
     $gpoLinksCache   = @{}
     $rawSettingsList = [System.Collections.Generic.List[PSCustomObject]]::new()
     $rawCompareList  = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     # =========================================================================
-    # SPALTENSORTIERUNG FÜR DATAGRIDVIEWS
+    # SPALTENSORTIERUNG FUER DATAGRIDVIEWS
     # =========================================================================
     function Enable-GridSorting {
         param([System.Windows.Forms.DataGridView]$Grid)
@@ -644,7 +664,7 @@ function Show-Tool15 {
     Enable-GridSorting -Grid $gridOvDetails
 
     # =========================================================================
-    # LOGIK TAB 1: ADSI GPO-Übersicht & OU-Links
+    # LOGIK TAB 1: ADSI GPO-Uebersicht & OU-Links
     # =========================================================================
     function Update-OverviewDisplay {
         if ($form.IsDisposed -or $gridOvMaster.IsDisposed) { return }
@@ -671,7 +691,7 @@ function Show-Tool15 {
         if ($gridOvMaster.Columns["GUID"]) { $gridOvMaster.Columns["GUID"].Visible = $false }
         if ($gridOvMaster.Columns["WMI Query"]) { $gridOvMaster.Columns["WMI Query"].Visible = $false }
 
-        $lblLegendOverview.Text = "Status: $($arr.Count) von $($rawOverviewList.Count) GPOs  |  [Blau/Lila] Default GPO  |  [Grün] OK  |  [Rot] Nicht OK"
+        $lblLegendOverview.Text = "Status: $($arr.Count) von $($rawOverviewList.Count) GPOs  |  [Blau/Lila] Default GPO  |  [Gruen] OK  |  [Rot] Nicht OK"
     }
 
     $loadOverviewAction = {
@@ -758,7 +778,7 @@ function Show-Tool15 {
                         1 { "OK (Nur Computer)" }
                         2 { "OK (Nur Benutzer)" }
                         0 { "Nicht OK (Beide aktiviert)" }
-                        3 { "Nicht OK (Vollständig deaktiviert)" }
+                        3 { "Nicht OK (Vollstaendig deaktiviert)" }
                         default { "Nicht OK (Unbekannt: $flags)" }
                     }
                 }
@@ -797,7 +817,7 @@ function Show-Tool15 {
                     "WMI Query"     = $wmiFilterQuery
                     "GUID"          = $guid
                     "Erstellt am"   = $created
-                    "Geändert am"   = $changed
+                    "Geaendert am"  = $changed
                 })
             }
 
@@ -855,7 +875,7 @@ function Show-Tool15 {
             $guid = [string]$selectedRow.Cells["GUID"].Value
             $gName = [string]$selectedRow.Cells["GPO Name"].Value
 
-            $lblOvDetailsTitle.Text = "Verlinkungsziele für: [$gName]"
+            $lblOvDetailsTitle.Text = "Verlinkungsziele fuer: [$gName]"
 
             $arrDetails = [System.Collections.ArrayList]::new()
             if ($guid -and $gpoLinksCache.ContainsKey($guid) -and $gpoLinksCache[$guid].Count -gt 0) {
@@ -866,7 +886,7 @@ function Show-Tool15 {
                         $simpleName = $matches[1]
                         $type = "OU"
                     } elseif ($dn -match "^DC=") {
-                        $type = "Domänen-Root"
+                        $type = "Domaenen-Root"
                         $simpleName = $domainName
                     }
                     [void]$arrDetails.Add([PSCustomObject]@{
@@ -878,8 +898,8 @@ function Show-Tool15 {
             } else {
                 [void]$arrDetails.Add([PSCustomObject]@{
                     "Typ"                = "Info"
-                    "Name / Ziel"        = "-- Keine Verknüpfung --"
-                    "DistinguishedName"  = "⚠️ Diese GPO ist aktuell nirgendwo verlinkt (Unlinked)."
+                    "Name / Ziel"        = "-- Keine Verknuepfung --"
+                    "DistinguishedName"  = "[Hinweis] Diese GPO ist aktuell nirgendwo verlinkt (Unlinked)."
                 })
             }
             $gridOvDetails.DataSource = $arrDetails
@@ -915,16 +935,16 @@ function Show-Tool15 {
                 "WMI Query"        = $row."WMI Query"
                 "GUID"             = $row."GUID"
                 "Erstellt am"      = $row."Erstellt am"
-                "Geändert am"      = $row."Geändert am"
+                "Geaendert am"     = $row."Geaendert am"
             }
         }
 
         $enriched | Export-Csv -Path $csvFile -Delimiter ";" -NoTypeInformation -Encoding UTF8
-        [System.Windows.Forms.MessageBox]::Show("Übersichtsbericht erfolgreich exportiert!`n`nPfad: $csvFile", "Export abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        [System.Windows.Forms.MessageBox]::Show("Uebersichtsbericht erfolgreich exportiert!`n`nPfad: $csvFile", "Export abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     })
 
     # =========================================================================
-    # PRÄZISER XML-PARSER (Trennt Parameter-Werte strikt von Explain-Texten)
+    # PRAEZISER XML-PARSER (Trennt Parameter-Werte strikt von Explain-Texten)
     # =========================================================================
     function Get-ParsedGpoSettings {
         param([string]$GpoId, [string]$GpoDisplayName)
@@ -958,7 +978,7 @@ function Show-Tool15 {
 
                         $pExplain = if ($p.SelectSingleNode("./*[local-name()='Explain' or local-name()='ExplainText']")) {
                             $p.SelectSingleNode("./*[local-name()='Explain' or local-name()='ExplainText']").InnerText.Trim()
-                        } else { "Keine Erklärung in der Richtlinienvorlage hinterlegt." }
+                        } else { "Keine Erklaerung in der Richtlinienvorlage hinterlegt." }
 
                         $ignoredTags = @("Name", "State", "Explain", "ExplainText", "Supported", "SupportedOn", "Category", "Text")
                         $paramValues = @()
@@ -988,7 +1008,7 @@ function Show-Tool15 {
                             if ($extractedList.Count -gt 0) {
                                 $joinedVals = $extractedList -join ", "
                                 if (-not [string]::IsNullOrWhiteSpace($optLabel) -and $optLabel -ne $joinedVals) {
-                                    $paramValues += "$($optLabel): $($joinedVals)"
+                                    $paramValues += "$($optLabel): $joinedVals"
                                 } else {
                                     $paramValues += "$joinedVals"
                                 }
@@ -1042,7 +1062,7 @@ function Show-Tool15 {
                             Value     = "Starttyp: $modeDE"
                             State     = $modeDE
                             Supported = "Windows Systemdienste"
-                            Explain   = "Startmodus für den Windows-Dienst '$svcName': $modeDE"
+                            Explain   = "Startmodus fuer den Windows-Dienst '$svcName': $modeDE"
                             GpoName   = $GpoDisplayName
                             Datum     = $dateStr
                             Uhrzeit   = $timeStr
@@ -1058,19 +1078,19 @@ function Show-Tool15 {
                         $itemType = $parent.LocalName
                         
                         $gppCategory = switch ($itemType) {
-                            "Drive"               { "Präferenzen (GPP) / Laufwerkszuordnungen" }
-                            "Shortcut"            { "Präferenzen (GPP) / Verknüpfungen" }
-                            "File"                { "Präferenzen (GPP) / Dateien" }
-                            "Folder"              { "Präferenzen (GPP) / Ordner" }
-                            "Registry"            { "Präferenzen (GPP) / Registrierung" }
-                            "TaskV2"              { "Präferenzen (GPP) / Geplante Aufgaben" }
-                            "ImmediateTaskV2"     { "Präferenzen (GPP) / Sofortige Aufgaben" }
-                            "Group"               { "Präferenzen (GPP) / Lokale Gruppen" }
-                            "User"                { "Präferenzen (GPP) / Lokale Benutzer" }
-                            "SharedPrinter"       { "Präferenzen (GPP) / Netzwerkdrucker" }
-                            "LocalPrinter"        { "Präferenzen (GPP) / Lokale Drucker" }
-                            "EnvironmentVariable" { "Präferenzen (GPP) / Umgebungsvariablen" }
-                            default               { "Präferenzen (GPP) / $itemType" }
+                            "Drive"               { "Praeferenzen (GPP) / Laufwerkszuordnungen" }
+                            "Shortcut"            { "Praeferenzen (GPP) / Verknuepfungen" }
+                            "File"                { "Praeferenzen (GPP) / Dateien" }
+                            "Folder"              { "Praeferenzen (GPP) / Ordner" }
+                            "Registry"            { "Praeferenzen (GPP) / Registrierung" }
+                            "TaskV2"              { "Praeferenzen (GPP) / Geplante Aufgaben" }
+                            "ImmediateTaskV2"     { "Praeferenzen (GPP) / Sofortige Aufgaben" }
+                            "Group"               { "Praeferenzen (GPP) / Lokale Gruppen" }
+                            "User"                { "Praeferenzen (GPP) / Lokale Benutzer" }
+                            "SharedPrinter"       { "Praeferenzen (GPP) / Netzwerkdrucker" }
+                            "LocalPrinter"        { "Praeferenzen (GPP) / Lokale Drucker" }
+                            "EnvironmentVariable" { "Praeferenzen (GPP) / Umgebungsvariablen" }
+                            default               { "Praeferenzen (GPP) / $itemType" }
                         }
 
                         $itemName = if ($parent.Attributes["name"]) {
@@ -1088,7 +1108,7 @@ function Show-Tool15 {
                             "C" { "Erstellen (Create)" }
                             "U" { "Aktualisieren (Update)" }
                             "R" { "Ersetzen (Replace)" }
-                            "D" { "Löschen (Delete)" }
+                            "D" { "Loeschen (Delete)" }
                             default { $actionCode }
                         }
 
@@ -1106,7 +1126,7 @@ function Show-Tool15 {
 
                         $descLines = @("GPP OBJEKT: $itemName", "TYP:        $itemType", "AKTION:     $actionText", "--------------------------------------------------")
                         foreach ($att in $prop.Attributes) {
-                            $descLines += " • $($att.Name): $($att.Value)"
+                            $descLines += " - $($att.Name): $($att.Value)"
                         }
 
                         $list.Add([PSCustomObject]@{
@@ -1115,7 +1135,7 @@ function Show-Tool15 {
                             Name      = $itemName
                             Value     = $cleanGppVal
                             State     = $actionText
-                            Supported = "Gruppenrichtlinien-Präferenzen (GPP)"
+                            Supported = "Gruppenrichtlinien-Praeferenzen (GPP)"
                             Explain   = $descLines -join "`r`n"
                             GpoName   = $GpoDisplayName
                             Datum     = $dateStr
@@ -1173,7 +1193,7 @@ function Show-Tool15 {
                                 Value     = $members
                                 State     = "Zugewiesen"
                                 Supported = "Benutzerrechte-Richtlinie"
-                                Explain   = "Zugewiesene Konten / Gruppen für '$rightName':`r`n$members"
+                                Explain   = "Zugewiesene Konten / Gruppen fuer '$rightName':`r`n$members"
                                 GpoName   = $GpoDisplayName
                                 Datum     = $dateStr
                                 Uhrzeit   = $timeStr
@@ -1252,7 +1272,7 @@ function Show-Tool15 {
             $gridSettings.Rows[0].Selected = $true
         } else {
             $lblSettingsStatus.Text = "Keine Einstellungen gefunden."
-            $txtDescription.Text = "Keine Einträge für die Auswahl vorhanden."
+            $txtDescription.Text = "Keine Eintraege fuer die Auswahl vorhanden."
         }
     }
 
@@ -1301,7 +1321,7 @@ function Show-Tool15 {
             $detailText += "WERT       : $($row.Cells['colValue'].Value)`r`n"
             $detailText += "KOMPATIBEL : $($row.Cells['colSupported'].Value)`r`n"
             $detailText += "======================================================================`r`n`r`n"
-            $detailText += "[ERLÄUTERUNG / BESCHREIBUNG]`r`n"
+            $detailText += "[ERLAEUTERUNG / BESCHREIBUNG]`r`n"
             $detailText += [string]$row.Cells['colExplain'].Value
 
             $txtDescription.Text = $detailText
@@ -1322,7 +1342,7 @@ function Show-Tool15 {
         $csvFile = Join-Path $targetBase "GPO_Settings_Export_${dateStr}_${timeStr}.csv"
 
         $rawSettingsList | Export-Csv -Path $csvFile -Delimiter ";" -NoTypeInformation -Encoding UTF8
-        [System.Windows.Forms.MessageBox]::Show("Erfolgreich $($rawSettingsList.Count) Einträge exportiert!`n`nPfad: $csvFile", "Export abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        [System.Windows.Forms.MessageBox]::Show("Erfolgreich $($rawSettingsList.Count) Eintraege exportiert!`n`nPfad: $csvFile", "Export abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     })
 
     # =========================================================================
@@ -1330,7 +1350,7 @@ function Show-Tool15 {
     # =========================================================================
     $btnBrowseFolder.Add_Click({
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-        $dialog.Description = "Wählen Sie das Basis-Backup-Verzeichnis für die GPOs aus:"
+        $dialog.Description = "Waehlen Sie das Basis-Backup-Verzeichnis fuer die GPOs aus:"
         $dialog.SelectedPath = $txtBackupTargetDir.Text.Trim()
         if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $txtBackupTargetDir.Text = $dialog.SelectedPath
@@ -1343,7 +1363,7 @@ function Show-Tool15 {
         $tableGpos = New-Object System.Data.DataTable
         [void]$tableGpos.Columns.Add("GPO Name")
         [void]$tableGpos.Columns.Add("Status")
-        [void]$tableGpos.Columns.Add("Verknüpft")
+        [void]$tableGpos.Columns.Add("Verknuepft")
         [void]$tableGpos.Columns.Add("GPO ID (GUID)")
 
         $allGpos = Get-GPO -All | Sort-Object DisplayName
@@ -1364,10 +1384,10 @@ function Show-Tool15 {
         if ($gridGpos.SelectedRows.Count -gt 0) {
             $guid = $gridGpos.SelectedRows[0].Cells["GPO ID (GUID)"].Value
             $name = $gridGpos.SelectedRows[0].Cells["GPO Name"].Value
-            $lblLinks.Text = "2. Verknüpfungs-Ziele für: [$name]"
+            $lblLinks.Text = "2. Verknuepfungs-Ziele fuer: [$name]"
 
             $tableLinks = New-Object System.Data.DataTable
-            [void]$tableLinks.Columns.Add("Verknüpfungs-Ziel (SOMPath)")
+            [void]$tableLinks.Columns.Add("Verknuepfungs-Ziel (SOMPath)")
             [void]$tableLinks.Columns.Add("Aktiviert (LinkEnabled)")
             [void]$tableLinks.Columns.Add("Keine Vererbung (Enforced)")
 
@@ -1379,7 +1399,7 @@ function Show-Tool15 {
                         [void]$tableLinks.Rows.Add($l.SOMPath, $l.Enabled, $l.NoOverride)
                     }
                 } else {
-                    [void]$tableLinks.Rows.Add("-- Keine Verknüpfung vorhanden --", "-", "-")
+                    [void]$tableLinks.Rows.Add("-- Keine Verknuepfung vorhanden --", "-", "-")
                 }
             } catch {
                 [void]$tableLinks.Rows.Add("Fehler beim Abruf", "-", "-")
@@ -1411,21 +1431,21 @@ function Show-Tool15 {
         "Ziel-Ordner     : $targetPath"                       | Out-File -FilePath $txtPath -Append -Encoding UTF8
         "--------------------------------------------------" | Out-File -FilePath $txtPath -Append -Encoding UTF8
         if ($links) {
-            "Verknüpfungen:" | Out-File -FilePath $txtPath -Append -Encoding UTF8
+            "Verknuepfungen:" | Out-File -FilePath $txtPath -Append -Encoding UTF8
             foreach ($l in $links) {
                 " - Ziel (SOM): $($l.SOMPath) | Aktiv: $($l.Enabled) | Enforced: $($l.NoOverride)" | Out-File -FilePath $txtPath -Append -Encoding UTF8
             }
         } else {
-            "Status: Unverknüpft (Unlinked GPO)" | Out-File -FilePath $txtPath -Append -Encoding UTF8
+            "Status: Unverknuepft (Unlinked GPO)" | Out-File -FilePath $txtPath -Append -Encoding UTF8
         }
 
-        $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] ✅ Gesichert: '$gpoName' -> $targetPath`r`n")
+        $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [OK] Gesichert: '$gpoName' -> $targetPath`r`n")
     }
 
     $btnBackupSelected.Add_Click({
         $basePath = $txtBackupTargetDir.Text.Trim()
         if ([string]::IsNullOrWhiteSpace($basePath)) {
-            [System.Windows.Forms.MessageBox]::Show("Bitte geben Sie einen gültigen Zielpfad ein.", "Pfad fehlt", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            [System.Windows.Forms.MessageBox]::Show("Bitte geben Sie einen gueltigen Zielpfad ein.", "Pfad fehlt", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             return
         }
 
@@ -1433,28 +1453,28 @@ function Show-Tool15 {
             $guid = $gridGpos.SelectedRows[0].Cells["GPO ID (GUID)"].Value
             $name = $gridGpos.SelectedRows[0].Cells["GPO Name"].Value
             
-            $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] Starte Einzelsicherung für '$name'...`r`n")
+            $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] Starte Einzelsicherung fuer '$name'...`r`n")
             try {
                 Backup-SingleGPOWithLog -gpoGuid $guid -gpoName $name -basePath $basePath
-                [System.Windows.Forms.MessageBox]::Show("Backup für GPO '$name' erfolgreich abgeschlossen!`n`nOrdner: $basePath\$name", "Sicherung OK", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                [System.Windows.Forms.MessageBox]::Show("Backup fuer GPO '$name' erfolgreich abgeschlossen!`n`nOrdner: $basePath\$name", "Sicherung OK", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
             } catch {
-                $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] ❌ FEHLER bei '$name': $_`r`n")
+                $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [FEHLER] bei '$name': $_`r`n")
                 [System.Windows.Forms.MessageBox]::Show("Fehler beim Backup: $_", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
             }
         } else {
-            [System.Windows.Forms.MessageBox]::Show("Bitte wählen Sie zuerst eine GPO in der Tabelle aus.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            [System.Windows.Forms.MessageBox]::Show("Bitte waehlen Sie zuerst eine GPO in der Tabelle aus.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
         }
     })
 
     $btnBackupAll.Add_Click({
         $basePath = $txtBackupTargetDir.Text.Trim()
         if ([string]::IsNullOrWhiteSpace($basePath)) {
-            [System.Windows.Forms.MessageBox]::Show("Bitte geben Sie einen gültigen Zielpfad ein.", "Pfad fehlt", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            [System.Windows.Forms.MessageBox]::Show("Bitte geben Sie einen gueltigen Zielpfad ein.", "Pfad fehlt", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             return
         }
 
         $allGpos = Get-GPO -All
-        $confirm = [System.Windows.Forms.MessageBox]::Show("Möchten Sie wirklich alle $($allGpos.Count) Gruppenrichtlinien nach '$basePath' sichern?", "Bestätigung", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+        $confirm = [System.Windows.Forms.MessageBox]::Show("Moechten Sie wirklich alle $($allGpos.Count) Gruppenrichtlinien nach '$basePath' sichern?", "Bestaetigung", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
         if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) { return }
 
         $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === Starte Gesamtsicherung aller $($allGpos.Count) GPOs ===`r`n")
@@ -1464,7 +1484,7 @@ function Show-Tool15 {
             try {
                 Backup-SingleGPOWithLog -gpoGuid $g.Id -gpoName $g.DisplayName -basePath $basePath
             } catch {
-                $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] ❌ FEHLER bei '$($g.DisplayName)': $_`r`n")
+                $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [FEHLER] bei '$($g.DisplayName)': $_`r`n")
             }
         }
         $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === Gesamtsicherung abgeschlossen! ===`r`n")
@@ -1525,7 +1545,7 @@ function Show-Tool15 {
         }
 
         if ($diffCount -eq 0 -and $totalCount -gt 0) {
-            $lblCompareStatus.Text = "✅ 0 Unterschiede! Alle $totalCount Richtlinien sind identisch (Grün)."
+            $lblCompareStatus.Text = "[OK] 0 Unterschiede! Alle $totalCount Richtlinien sind identisch (Gruen)."
         } else {
             $lblCompareStatus.Text = "$diffCount Unterschied(e) bei $totalCount untersuchten Richtlinien."
         }
@@ -1536,7 +1556,7 @@ function Show-Tool15 {
         $gpoName2 = $comboGpo2.SelectedItem
 
         if ([string]::IsNullOrWhiteSpace($gpoName1) -or [string]::IsNullOrWhiteSpace($gpoName2)) {
-            [System.Windows.Forms.MessageBox]::Show("Bitte wählen Sie zwei GPOs für den Vergleich aus.", "Auswahl unvollständig", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            [System.Windows.Forms.MessageBox]::Show("Bitte waehlen Sie zwei GPOs fuer den Vergleich aus.", "Auswahl unvollstaendig", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             return
         }
 
@@ -1625,7 +1645,7 @@ function Show-Tool15 {
 
     $btnExportCompareCsv.Add_Click({
         if ($rawCompareList.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Führen Sie zuerst einen Vergleich durch.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            [System.Windows.Forms.MessageBox]::Show("Fuehren Sie zuerst einen Vergleich durch.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             return
         }
 
@@ -1644,7 +1664,41 @@ function Show-Tool15 {
     })
 
     # =========================================================================
-    # INITIALISIERUNG & FORM-CLOSING HANDLER
+    # EVENT: POWERSHELL- & TOOL-INFO DIALOG
+    # =========================================================================
+    $btnPsInfo.Add_Click({
+        $psVer    = $PSVersionTable.PSVersion.ToString()
+        $psEdit   = if ($PSVersionTable.PSEdition) { $PSVersionTable.PSEdition } else { "Desktop (Windows PowerShell)" }
+        $clrVer   = if ($PSVersionTable.CLRVersion) { $PSVersionTable.CLRVersion.ToString() } else { "Core CLR (.NET)" }
+        $osVer    = [System.Environment]::OSVersion.VersionString
+        $bitProc  = if ([System.Environment]::Is64BitProcess) { "64-Bit" } else { "32-Bit" }
+        $execPol  = (Get-ExecutionPolicy).ToString()
+        $userCtx  = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $adMod    = try { (Get-Module -Name ActiveDirectory -ListAvailable | Select-Object -First 1).Version.ToString() } catch { "Nicht geladen" }
+        $gpoMod   = try { (Get-Module -Name GroupPolicy -ListAvailable | Select-Object -First 1).Version.ToString() } catch { "Standard" }
+
+        $infoMsg  = "========================================================`r`n"
+        $infoMsg += " TOOL 15: GPO ENTERPRISE SUITE`r`n"
+        $infoMsg += " Version : $script:ToolVersion`r`n"
+        $infoMsg += " Domaene : $domainName`r`n"
+        $infoMsg += " Benutzer: $userCtx`r`n"
+        $infoMsg += "========================================================`r`n`r`n"
+        $infoMsg += "[POWERSHELL UMGEBUNG]`r`n"
+        $infoMsg += " - PowerShell Version : $psVer`r`n"
+        $infoMsg += " - PowerShell Edition : $psEdit`r`n"
+        $infoMsg += " - .NET CLR Version   : $clrVer`r`n"
+        $infoMsg += " - Prozess-Architektur: $bitProc`r`n"
+        $infoMsg += " - Execution-Policy   : $execPol`r`n`r`n"
+        $infoMsg += "[SYSTEM & MODULE]`r`n"
+        $infoMsg += " - Betriebssystem     : $osVer`r`n"
+        $infoMsg += " - GroupPolicy Modul  : $gpoMod`r`n"
+        $infoMsg += " - ActiveDirectory Mod: $adMod`r`n"
+
+        [System.Windows.Forms.MessageBox]::Show($infoMsg, "PowerShell & Tool Information", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    })
+
+    # =========================================================================
+    # INITIALISIERUNG BEIM START & SAUBERES SCHLIESSEN
     # =========================================================================
     $form.Add_Shown({
         $comboGpo.Items.Clear()
@@ -1668,7 +1722,6 @@ function Show-Tool15 {
         & $loadGposAction
     })
 
-    # Entkoppeln aller Grids beim Schließen, um Deadlocks zu verhindern
     $form.Add_FormClosing({
         $gridOvMaster.DataSource = $null
         $gridOvDetails.DataSource = $null
@@ -1678,7 +1731,6 @@ function Show-Tool15 {
         $gridCompare.DataSource = $null
     })
 
-    # Formular anzeigen
     try {
         [void]$form.ShowDialog()
     } finally {
