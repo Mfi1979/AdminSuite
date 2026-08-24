@@ -1,7 +1,7 @@
 <#
 ==================================================================================
  Tool 15: Active Directory GPO Enterprise Suite
- Version: 1.5.2 (DPI- & Layout-optimiert, ASCII-only, Clean-Exit)
+ Version: 1.5.8 (Grosse Registerschrift, dynamischer Titelumbruch, ISE-Safe)
  
  Register 1: GPO Uebersicht & Verlinkungs-Analyse
              - Schnelle ADSI/LDAP-Abfrage aller GPOs, WMI-Filter & OU-Verlinkungen
@@ -13,20 +13,22 @@
                * [Rot] Nicht OK (Beide aktiviert oder vollstaendig deaktiviert)
              - Klickbare Spaltensortierung auf allen Spalten
              - Master-Detail: Zeigt rechts alle Verlinkungsziele (OUs/Domaene)
-             - PowerShell- & Tool-Info-Dialog via Button
+             - 2-zeiliger Titelbereich (kein Abschneiden langer GPO-Namen)
  
  Register 2: GPO Richtlinien-Einstellungen & Inspektor (Praeziser XML-Parser)
              - Bereinigte Spalte "Konfigurierter Wert" (reine Werte ohne Explain-Texte)
              - Vollstaendige Richtlinienerklaerung rechts im Detailbereich
  
  Register 3: GPO Backup & Verknuepfungs-Audit
-             - DPI-sichere 2-Zeilen-Kopfleiste (kein Abschneiden von Buttons/Texten)
+             - Voll-dynamisches SplitContainer-Layout
              - Konfigurierbarer Ziel-Pfad mit Ordnerauswahl-Dialog
              - Einzelsicherung oder Gesamtsicherung aller GPOs
              - Datums- & Zeitstruktur: [Zielpfad]\[GPO-Name]\[JJJJMMTT_HHMM]
              - Erstellung von 'GPO_Link_Info.txt'
  
- Register 4: GPO-Vergleich (Diff mit getrennten Status- & Werte-Spalten)
+ Register 4: GPO-Vergleich (Diff)
+             - Entzerrte 2-Zeilen-Kopfleiste (keine Ueberlagerungen)
+             - Einzeilige Spaltenkoepfe mit fester Mindestbreite
              - 2 beliebige GPOs gegeneinander vergleichen
              - Spalten: Bereich, Kategorie, Einstellung, Status GPO 1, Wert GPO 1, Status GPO 2, Wert GPO 2, Diff-Status
              - Erkennt Parameter- & Zahlenwert-Abweichungen (Gelb/Orange)
@@ -40,7 +42,7 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.DirectoryServices
 Import-Module GroupPolicy -ErrorAction Stop
 
-$script:ToolVersion = "v1.5.2"
+$script:ToolVersion = "v1.5.8"
 
 function Show-Tool15 {
     [CmdletBinding()]
@@ -49,8 +51,10 @@ function Show-Tool15 {
     # --- Domaenenpruefung ---
     try {
         $domainInfo = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
-        $domainDN = ([ADSI]"LDAP://RootDSE").defaultNamingContext.Value
+        $rootDse = [ADSI]"LDAP://RootDSE"
+        $domainDN = $rootDse.defaultNamingContext.Value
         $domainName = $domainInfo.Name
+        $rootDse.Dispose()
     } catch {
         [System.Windows.Forms.MessageBox]::Show(
             "Active Directory Domaene nicht erreichbar oder Computer nicht domaenengebunden.",
@@ -61,6 +65,9 @@ function Show-Tool15 {
         return
     }
 
+    # Schutz-Flag gegen Event-Deadlocks beim Beenden
+    $isClosing = $false
+
     # --- Hauptfenster ---
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - $script:ToolVersion"
@@ -69,14 +76,18 @@ function Show-Tool15 {
     $form.MinimumSize = New-Object System.Drawing.Size(1250, 750)
     $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
+    # --- TabControl mit groesserer Schrift & Polsterung ---
     $tabControl = New-Object System.Windows.Forms.TabControl
     $tabControl.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $tabControl.Font = New-Object System.Drawing.Font("Segoe UI", 10.5, [System.Drawing.FontStyle]::Bold)
+    $tabControl.Padding = New-Object System.Drawing.Point(14, 6)
 
     # =========================================================================
     # REGISTER 1: GPO Uebersicht & Verlinkungs-Analyse
     # =========================================================================
     $tabOverview = New-Object System.Windows.Forms.TabPage
     $tabOverview.Text = "1. GPO Uebersicht & Verlinkungs-Analyse"
+    $tabOverview.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
 
     $panelOverviewTop = New-Object System.Windows.Forms.Panel
     $panelOverviewTop.Dock = [System.Windows.Forms.DockStyle]::Top
@@ -92,8 +103,8 @@ function Show-Tool15 {
     $lblViewFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboViewMode = New-Object System.Windows.Forms.ComboBox
-    $comboViewMode.Location = New-Object System.Drawing.Point(72, 13)
-    $comboViewMode.Size = New-Object System.Drawing.Size(220, 25)
+    $comboViewMode.Location = New-Object System.Drawing.Point(80, 13)
+    $comboViewMode.Size = New-Object System.Drawing.Size(210, 25)
     $comboViewMode.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
     [void]$comboViewMode.Items.Add("Alle GPOs")
     [void]$comboViewMode.Items.Add("GPOs mit WMI-Filter")
@@ -107,8 +118,8 @@ function Show-Tool15 {
     $lblOverviewSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtOverviewSearch = New-Object System.Windows.Forms.TextBox
-    $txtOverviewSearch.Location = New-Object System.Drawing.Point(355, 13)
-    $txtOverviewSearch.Size = New-Object System.Drawing.Size(180, 25)
+    $txtOverviewSearch.Location = New-Object System.Drawing.Point(360, 13)
+    $txtOverviewSearch.Size = New-Object System.Drawing.Size(170, 25)
 
     $btnRefreshOverview = New-Object System.Windows.Forms.Button
     $btnRefreshOverview.Text = "Neu laden"
@@ -158,7 +169,7 @@ function Show-Tool15 {
     $lblOvMasterTitle = New-Object System.Windows.Forms.Label
     $lblOvMasterTitle.Text = "Gruppenrichtlinien der Domaene (Klick auf Spaltenkopf zum Sortieren):"
     $lblOvMasterTitle.Dock = [System.Windows.Forms.DockStyle]::Top
-    $lblOvMasterTitle.Height = 25
+    $lblOvMasterTitle.Height = 28
     $lblOvMasterTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $gridOvMaster = New-Object System.Windows.Forms.DataGridView
@@ -176,13 +187,15 @@ function Show-Tool15 {
     $gridOvMaster.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::AllCells
     $gridOvMaster.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
     $gridOvMaster.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $gridOvMaster.ColumnHeadersHeight = 32
+    $gridOvMaster.ColumnHeadersHeight = 34
+    $gridOvMaster.RowTemplate.Height = 26
+    $gridOvMaster.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
 
     $panelOvLeft.Controls.Add($gridOvMaster)
     $panelOvLeft.Controls.Add($lblOvMasterTitle)
     $splitOverview.Panel1.Controls.Add($panelOvLeft)
 
-    # Rechte Seite Tab 1
+    # Rechte Seite Tab 1 (Mit 46px Hoehe fuer 2 Zeilen Textumbruch)
     $panelOvRight = New-Object System.Windows.Forms.Panel
     $panelOvRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelOvRight.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 10)
@@ -190,7 +203,7 @@ function Show-Tool15 {
     $lblOvDetailsTitle = New-Object System.Windows.Forms.Label
     $lblOvDetailsTitle.Text = "Verlinkungsziele der GPO (OUs / Domaene):"
     $lblOvDetailsTitle.Dock = [System.Windows.Forms.DockStyle]::Top
-    $lblOvDetailsTitle.Height = 25
+    $lblOvDetailsTitle.Height = 46
     $lblOvDetailsTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $gridOvDetails = New-Object System.Windows.Forms.DataGridView
@@ -206,7 +219,9 @@ function Show-Tool15 {
     $gridOvDetails.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
     $gridOvDetails.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
     $gridOvDetails.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $gridOvDetails.ColumnHeadersHeight = 32
+    $gridOvDetails.ColumnHeadersHeight = 34
+    $gridOvDetails.RowTemplate.Height = 26
+    $gridOvDetails.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
     $gridOvDetails.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
 
     $panelOvRight.Controls.Add($gridOvDetails)
@@ -221,6 +236,7 @@ function Show-Tool15 {
     # =========================================================================
     $tabSettings = New-Object System.Windows.Forms.TabPage
     $tabSettings.Text = "2. GPO Richtlinien-Einstellungen & Inspektor"
+    $tabSettings.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
 
     $panelSettingsTop = New-Object System.Windows.Forms.Panel
     $panelSettingsTop.Dock = [System.Windows.Forms.DockStyle]::Top
@@ -230,40 +246,40 @@ function Show-Tool15 {
 
     $lblGpo = New-Object System.Windows.Forms.Label
     $lblGpo.Text = "GPO:"
-    $lblGpo.Location = New-Object System.Drawing.Point(12, 20)
+    $lblGpo.Location = New-Object System.Drawing.Point(12, 19)
     $lblGpo.AutoSize = $true
     $lblGpo.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboGpo = New-Object System.Windows.Forms.ComboBox
-    $comboGpo.Location = New-Object System.Drawing.Point(55, 17)
+    $comboGpo.Location = New-Object System.Drawing.Point(55, 16)
     $comboGpo.Size = New-Object System.Drawing.Size(360, 25)
     $comboGpo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
     $lblFilter = New-Object System.Windows.Forms.Label
     $lblFilter.Text = "Suche:"
-    $lblFilter.Location = New-Object System.Drawing.Point(425, 20)
+    $lblFilter.Location = New-Object System.Drawing.Point(430, 19)
     $lblFilter.AutoSize = $true
     $lblFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtFilter = New-Object System.Windows.Forms.TextBox
-    $txtFilter.Location = New-Object System.Drawing.Point(475, 17)
-    $txtFilter.Size = New-Object System.Drawing.Size(200, 25)
+    $txtFilter.Location = New-Object System.Drawing.Point(485, 16)
+    $txtFilter.Size = New-Object System.Drawing.Size(190, 25)
 
     $btnLoadSettings = New-Object System.Windows.Forms.Button
     $btnLoadSettings.Text = "Laden"
-    $btnLoadSettings.Location = New-Object System.Drawing.Point(685, 15)
+    $btnLoadSettings.Location = New-Object System.Drawing.Point(690, 14)
     $btnLoadSettings.Size = New-Object System.Drawing.Size(95, 30)
     $btnLoadSettings.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
 
     $btnExportCsv = New-Object System.Windows.Forms.Button
     $btnExportCsv.Text = "CSV Export"
-    $btnExportCsv.Location = New-Object System.Drawing.Point(788, 15)
+    $btnExportCsv.Location = New-Object System.Drawing.Point(792, 14)
     $btnExportCsv.Size = New-Object System.Drawing.Size(105, 30)
     $btnExportCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
     $lblSettingsStatus = New-Object System.Windows.Forms.Label
     $lblSettingsStatus.Text = "Bereit."
-    $lblSettingsStatus.Location = New-Object System.Drawing.Point(905, 21)
+    $lblSettingsStatus.Location = New-Object System.Drawing.Point(910, 20)
     $lblSettingsStatus.AutoSize = $true
     $lblSettingsStatus.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
 
@@ -275,7 +291,6 @@ function Show-Tool15 {
     $panelSettingsTop.Controls.Add($btnExportCsv)
     $panelSettingsTop.Controls.Add($lblSettingsStatus)
 
-    # SplitContainer Tab 2
     $splitSettings = New-Object System.Windows.Forms.SplitContainer
     $splitSettings.Dock = [System.Windows.Forms.DockStyle]::Fill
     $splitSettings.SplitterDistance = 900
@@ -288,7 +303,7 @@ function Show-Tool15 {
     $lblTableTitle = New-Object System.Windows.Forms.Label
     $lblTableTitle.Text = "Konfigurierte Einstellungen:"
     $lblTableTitle.Dock = [System.Windows.Forms.DockStyle]::Top
-    $lblTableTitle.Height = 25
+    $lblTableTitle.Height = 28
     $lblTableTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $gridSettings = New-Object System.Windows.Forms.DataGridView
@@ -305,7 +320,8 @@ function Show-Tool15 {
     $gridSettings.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
     $gridSettings.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
     $gridSettings.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $gridSettings.ColumnHeadersHeight = 32
+    $gridSettings.ColumnHeadersHeight = 34
+    $gridSettings.RowTemplate.Height = 26
     $gridSettings.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
 
     [void]$gridSettings.Columns.Add("colScope", "Bereich")
@@ -330,7 +346,6 @@ function Show-Tool15 {
     $panelSettingsLeft.Controls.Add($lblTableTitle)
     $splitSettings.Panel1.Controls.Add($panelSettingsLeft)
 
-    # Rechte Seite Tab 2 (Detailbereich)
     $panelSettingsRight = New-Object System.Windows.Forms.Panel
     $panelSettingsRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelSettingsRight.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 10)
@@ -338,7 +353,7 @@ function Show-Tool15 {
     $lblDescHeader = New-Object System.Windows.Forms.Label
     $lblDescHeader.Text = "Erlaeuterung & Richtlinien-Details:"
     $lblDescHeader.Dock = [System.Windows.Forms.DockStyle]::Top
-    $lblDescHeader.Height = 25
+    $lblDescHeader.Height = 28
     $lblDescHeader.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtDescription = New-Object System.Windows.Forms.TextBox
@@ -357,55 +372,56 @@ function Show-Tool15 {
     $tabSettings.Controls.Add($panelSettingsTop)
 
     # =========================================================================
-    # REGISTER 3: GPO Backup & Verknuepfungs-Audit (DPI-sichere 2-Zeilen-Leiste)
+    # REGISTER 3: GPO Backup & Verknuepfungs-Audit
     # =========================================================================
     $tabBackup = New-Object System.Windows.Forms.TabPage
     $tabBackup.Text = "3. GPO Backup & Verknuepfungs-Status"
+    $tabBackup.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
 
     $panelBackupTop = New-Object System.Windows.Forms.Panel
     $panelBackupTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelBackupTop.Height = 110
+    $panelBackupTop.Height = 105
     $panelBackupTop.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
     $panelBackupTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
     # Zeile 1: Pfad & Durchsuchen
     $lblTargetPath = New-Object System.Windows.Forms.Label
     $lblTargetPath.Text = "Backup Ziel-Pfad:"
-    $lblTargetPath.Location = New-Object System.Drawing.Point(12, 18)
+    $lblTargetPath.Location = New-Object System.Drawing.Point(12, 17)
     $lblTargetPath.AutoSize = $true
     $lblTargetPath.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtBackupTargetDir = New-Object System.Windows.Forms.TextBox
-    $txtBackupTargetDir.Location = New-Object System.Drawing.Point(135, 15)
+    $txtBackupTargetDir.Location = New-Object System.Drawing.Point(165, 14)
     $txtBackupTargetDir.Size = New-Object System.Drawing.Size(480, 25)
     $txtBackupTargetDir.Text = "C:\Install\Backup\GPO"
 
     $btnBrowseFolder = New-Object System.Windows.Forms.Button
     $btnBrowseFolder.Text = "Durchsuchen..."
-    $btnBrowseFolder.Location = New-Object System.Drawing.Point(625, 12)
+    $btnBrowseFolder.Location = New-Object System.Drawing.Point(655, 11)
     $btnBrowseFolder.Size = New-Object System.Drawing.Size(125, 30)
 
-    # Zeile 2: Aktionen & Buttons (Großzügige Breiten gegen Abschneiden)
+    # Zeile 2: Aktionen & Buttons
     $btnLoadGpos = New-Object System.Windows.Forms.Button
     $btnLoadGpos.Text = "GPO-Liste laden"
-    $btnLoadGpos.Location = New-Object System.Drawing.Point(12, 56)
+    $btnLoadGpos.Location = New-Object System.Drawing.Point(12, 54)
     $btnLoadGpos.Size = New-Object System.Drawing.Size(140, 34)
 
     $btnBackupSelected = New-Object System.Windows.Forms.Button
     $btnBackupSelected.Text = "Ausgewaehlte GPO sichern"
-    $btnBackupSelected.Location = New-Object System.Drawing.Point(160, 56)
+    $btnBackupSelected.Location = New-Object System.Drawing.Point(165, 54)
     $btnBackupSelected.Size = New-Object System.Drawing.Size(220, 34)
     $btnBackupSelected.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
     $btnBackupAll = New-Object System.Windows.Forms.Button
     $btnBackupAll.Text = "ALLE GPOs sichern"
-    $btnBackupAll.Location = New-Object System.Drawing.Point(390, 56)
+    $btnBackupAll.Location = New-Object System.Drawing.Point(395, 54)
     $btnBackupAll.Size = New-Object System.Drawing.Size(180, 34)
     $btnBackupAll.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230)
 
     $lblBackupNote = New-Object System.Windows.Forms.Label
     $lblBackupNote.Text = "Format: [Zielpfad]\[Name der GPO]\[JJJJMMTT_HHMM]"
-    $lblBackupNote.Location = New-Object System.Drawing.Point(585, 65)
+    $lblBackupNote.Location = New-Object System.Drawing.Point(590, 63)
     $lblBackupNote.AutoSize = $true
     $lblBackupNote.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
 
@@ -417,20 +433,25 @@ function Show-Tool15 {
     $panelBackupTop.Controls.Add($btnBackupAll)
     $panelBackupTop.Controls.Add($lblBackupNote)
 
-    $panelBackupMain = New-Object System.Windows.Forms.Panel
-    $panelBackupMain.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $panelBackupMain.Padding = New-Object System.Windows.Forms.Padding(10)
+    # Dynamischer Hauptbereich in Register 3
+    $splitBackupMain = New-Object System.Windows.Forms.SplitContainer
+    $splitBackupMain.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $splitBackupMain.SplitterDistance = 750
+    $splitBackupMain.SplitterWidth = 6
+
+    # Links: GPO-Tabelle
+    $panelGpoLeft = New-Object System.Windows.Forms.Panel
+    $panelGpoLeft.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelGpoLeft.Padding = New-Object System.Windows.Forms.Padding(10, 8, 4, 10)
 
     $lblGpoGrid = New-Object System.Windows.Forms.Label
     $lblGpoGrid.Text = "1. Gruppenrichtlinien der Domaene:"
-    $lblGpoGrid.Location = New-Object System.Drawing.Point(10, 5)
-    $lblGpoGrid.AutoSize = $true
+    $lblGpoGrid.Dock = [System.Windows.Forms.DockStyle]::Top
+    $lblGpoGrid.Height = 28
     $lblGpoGrid.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $gridGpos = New-Object System.Windows.Forms.DataGridView
-    $gridGpos.Location = New-Object System.Drawing.Point(10, 28)
-    $gridGpos.Size = New-Object System.Drawing.Size(780, 670)
-    $gridGpos.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+    $gridGpos.Dock = [System.Windows.Forms.DockStyle]::Fill
     $gridGpos.ReadOnly = $true
     $gridGpos.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::AllCells
     $gridGpos.AllowUserToAddRows = $false
@@ -438,47 +459,79 @@ function Show-Tool15 {
     $gridGpos.MultiSelect = $false
     $gridGpos.RowHeadersVisible = $false
     $gridGpos.BackgroundColor = [System.Drawing.Color]::White
+    $gridGpos.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
+    $gridGpos.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
+    $gridGpos.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $gridGpos.ColumnHeadersHeight = 34
+    $gridGpos.RowTemplate.Height = 26
+    $gridGpos.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
+
+    $panelGpoLeft.Controls.Add($gridGpos)
+    $panelGpoLeft.Controls.Add($lblGpoGrid)
+    $splitBackupMain.Panel1.Controls.Add($panelGpoLeft)
+
+    # Rechts: Geteilt in Verknuepfungen (Oben) und Log (Unten)
+    $splitBackupRight = New-Object System.Windows.Forms.SplitContainer
+    $splitBackupRight.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $splitBackupRight.Orientation = [System.Windows.Forms.Orientation]::Horizontal
+    $splitBackupRight.SplitterDistance = 280
+    $splitBackupRight.SplitterWidth = 6
+
+    # Rechts Oben: Verknuepfungen
+    $panelLinks = New-Object System.Windows.Forms.Panel
+    $panelLinks.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelLinks.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 4)
 
     $lblLinks = New-Object System.Windows.Forms.Label
     $lblLinks.Text = "2. Verknuepfungs-Ziele (OUs / Sites):"
-    $lblLinks.Location = New-Object System.Drawing.Point(805, 5)
-    $lblLinks.AutoSize = $true
+    $lblLinks.Dock = [System.Windows.Forms.DockStyle]::Top
+    $lblLinks.Height = 28
     $lblLinks.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $gridLinks = New-Object System.Windows.Forms.DataGridView
-    $gridLinks.Location = New-Object System.Drawing.Point(805, 28)
-    $gridLinks.Size = New-Object System.Drawing.Size(705, 270)
-    $gridLinks.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $gridLinks.Dock = [System.Windows.Forms.DockStyle]::Fill
     $gridLinks.ReadOnly = $true
     $gridLinks.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
     $gridLinks.AllowUserToAddRows = $false
     $gridLinks.RowHeadersVisible = $false
     $gridLinks.BackgroundColor = [System.Drawing.Color]::White
+    $gridLinks.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
+    $gridLinks.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
+    $gridLinks.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $gridLinks.ColumnHeadersHeight = 34
+    $gridLinks.RowTemplate.Height = 26
+    $gridLinks.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
+
+    $panelLinks.Controls.Add($gridLinks)
+    $panelLinks.Controls.Add($lblLinks)
+    $splitBackupRight.Panel1.Controls.Add($panelLinks)
+
+    # Rechts Unten: Log
+    $panelLog = New-Object System.Windows.Forms.Panel
+    $panelLog.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelLog.Padding = New-Object System.Windows.Forms.Padding(4, 4, 10, 10)
 
     $lblLog = New-Object System.Windows.Forms.Label
     $lblLog.Text = "3. Backup- & Aktivitaets-Protokoll:"
-    $lblLog.Location = New-Object System.Drawing.Point(805, 308)
-    $lblLog.AutoSize = $true
+    $lblLog.Dock = [System.Windows.Forms.DockStyle]::Top
+    $lblLog.Height = 28
     $lblLog.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtLog = New-Object System.Windows.Forms.TextBox
-    $txtLog.Location = New-Object System.Drawing.Point(805, 330)
-    $txtLog.Size = New-Object System.Drawing.Size(705, 368)
-    $txtLog.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $txtLog.Dock = [System.Windows.Forms.DockStyle]::Fill
     $txtLog.Multiline = $true
     $txtLog.ReadOnly = $true
     $txtLog.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
     $txtLog.BackColor = [System.Drawing.Color]::FromArgb(250, 250, 252)
     $txtLog.Font = New-Object System.Drawing.Font("Consolas", 9)
 
-    $panelBackupMain.Controls.Add($lblGpoGrid)
-    $panelBackupMain.Controls.Add($gridGpos)
-    $panelBackupMain.Controls.Add($lblLinks)
-    $panelBackupMain.Controls.Add($gridLinks)
-    $panelBackupMain.Controls.Add($lblLog)
-    $panelBackupMain.Controls.Add($txtLog)
+    $panelLog.Controls.Add($txtLog)
+    $panelLog.Controls.Add($lblLog)
+    $splitBackupRight.Panel2.Controls.Add($panelLog)
 
-    $tabBackup.Controls.Add($panelBackupMain)
+    $splitBackupMain.Panel2.Controls.Add($splitBackupRight)
+
+    $tabBackup.Controls.Add($splitBackupMain)
     $tabBackup.Controls.Add($panelBackupTop)
 
     # =========================================================================
@@ -486,57 +539,60 @@ function Show-Tool15 {
     # =========================================================================
     $tabCompare = New-Object System.Windows.Forms.TabPage
     $tabCompare.Text = "4. GPO-Vergleich (Diff)"
+    $tabCompare.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
 
     $panelCompareTop = New-Object System.Windows.Forms.Panel
     $panelCompareTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelCompareTop.Height = 70
+    $panelCompareTop.Height = 90
     $panelCompareTop.BackColor = [System.Drawing.Color]::FromArgb(242, 245, 250)
     $panelCompareTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
+    # Zeile 1: Auswahl GPO 1, GPO 2 und Vergleichen
     $lblGpo1 = New-Object System.Windows.Forms.Label
     $lblGpo1.Text = "GPO 1 (Basis):"
-    $lblGpo1.Location = New-Object System.Drawing.Point(12, 22)
+    $lblGpo1.Location = New-Object System.Drawing.Point(12, 16)
     $lblGpo1.AutoSize = $true
     $lblGpo1.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboGpo1 = New-Object System.Windows.Forms.ComboBox
-    $comboGpo1.Location = New-Object System.Drawing.Point(105, 18)
-    $comboGpo1.Size = New-Object System.Drawing.Size(260, 25)
+    $comboGpo1.Location = New-Object System.Drawing.Point(115, 13)
+    $comboGpo1.Size = New-Object System.Drawing.Size(300, 25)
     $comboGpo1.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
     $lblGpo2 = New-Object System.Windows.Forms.Label
     $lblGpo2.Text = "GPO 2 (Vergleich):"
-    $lblGpo2.Location = New-Object System.Drawing.Point(380, 22)
+    $lblGpo2.Location = New-Object System.Drawing.Point(435, 16)
     $lblGpo2.AutoSize = $true
     $lblGpo2.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboGpo2 = New-Object System.Windows.Forms.ComboBox
-    $comboGpo2.Location = New-Object System.Drawing.Point(500, 18)
-    $comboGpo2.Size = New-Object System.Drawing.Size(260, 25)
+    $comboGpo2.Location = New-Object System.Drawing.Point(585, 13)
+    $comboGpo2.Size = New-Object System.Drawing.Size(300, 25)
     $comboGpo2.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
     $btnCompare = New-Object System.Windows.Forms.Button
     $btnCompare.Text = "Vergleichen"
-    $btnCompare.Location = New-Object System.Drawing.Point(775, 16)
-    $btnCompare.Size = New-Object System.Drawing.Size(110, 30)
+    $btnCompare.Location = New-Object System.Drawing.Point(905, 10)
+    $btnCompare.Size = New-Object System.Drawing.Size(120, 30)
     $btnCompare.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
 
+    # Zeile 2: Filter-Checkbox, CSV-Export & dynamischer Status
     $chkOnlyDiffs = New-Object System.Windows.Forms.CheckBox
     $chkOnlyDiffs.Text = "Nur Unterschiede anzeigen"
-    $chkOnlyDiffs.Location = New-Object System.Drawing.Point(900, 21)
+    $chkOnlyDiffs.Location = New-Object System.Drawing.Point(12, 52)
     $chkOnlyDiffs.AutoSize = $true
     $chkOnlyDiffs.Checked = $true
     $chkOnlyDiffs.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $btnExportCompareCsv = New-Object System.Windows.Forms.Button
     $btnExportCompareCsv.Text = "Diff CSV Export"
-    $btnExportCompareCsv.Location = New-Object System.Drawing.Point(1090, 16)
-    $btnExportCompareCsv.Size = New-Object System.Drawing.Size(125, 30)
+    $btnExportCompareCsv.Location = New-Object System.Drawing.Point(235, 48)
+    $btnExportCompareCsv.Size = New-Object System.Drawing.Size(130, 30)
     $btnExportCompareCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
     $lblCompareStatus = New-Object System.Windows.Forms.Label
     $lblCompareStatus.Text = "Waehlen Sie zwei GPOs fuer den Vergleich."
-    $lblCompareStatus.Location = New-Object System.Drawing.Point(1230, 22)
+    $lblCompareStatus.Location = New-Object System.Drawing.Point(380, 55)
     $lblCompareStatus.AutoSize = $true
     $lblCompareStatus.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
 
@@ -556,7 +612,7 @@ function Show-Tool15 {
     $lblCompareLegend = New-Object System.Windows.Forms.Label
     $lblCompareLegend.Text = "Legende:  [Gruen] Identische Einstellung  |  [Gelb/Orange] Abweichender Wert / Status  |  [Rot] Nur in GPO 1  |  [Blau] Nur in GPO 2"
     $lblCompareLegend.Dock = [System.Windows.Forms.DockStyle]::Top
-    $lblCompareLegend.Height = 22
+    $lblCompareLegend.Height = 28
     $lblCompareLegend.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
 
     $gridCompare = New-Object System.Windows.Forms.DataGridView
@@ -573,7 +629,10 @@ function Show-Tool15 {
     $gridCompare.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
     $gridCompare.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
     $gridCompare.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $gridCompare.ColumnHeadersHeight = 32
+    $gridCompare.ColumnHeadersDefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::False
+    $gridCompare.ColumnHeadersHeight = 34
+    $gridCompare.RowTemplate.Height = 26
+    $gridCompare.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
 
     [void]$gridCompare.Columns.Add("colCmpScope", "Bereich")
     [void]$gridCompare.Columns.Add("colCmpCategory", "Kategorie / Pfad")
@@ -587,10 +646,10 @@ function Show-Tool15 {
     $gridCompare.Columns["colCmpScope"].Width = 85
     $gridCompare.Columns["colCmpCategory"].Width = 200
     $gridCompare.Columns["colCmpName"].Width = 250
-    $gridCompare.Columns["colCmpState1"].Width = 100
-    $gridCompare.Columns["colCmpVal1"].Width = 220
-    $gridCompare.Columns["colCmpState2"].Width = 100
-    $gridCompare.Columns["colCmpVal2"].Width = 220
+    $gridCompare.Columns["colCmpState1"].Width = 130
+    $gridCompare.Columns["colCmpVal1"].Width = 210
+    $gridCompare.Columns["colCmpState2"].Width = 130
+    $gridCompare.Columns["colCmpVal2"].Width = 210
     $gridCompare.Columns["colCmpStatus"].AutoSizeMode = [System.Windows.Forms.DataGridViewAutoSizeColumnMode]::Fill
 
     $panelCompareMain.Controls.Add($gridCompare)
@@ -619,7 +678,7 @@ function Show-Tool15 {
 
         $Grid.Add_ColumnHeaderMouseClick({
             param($sender, $e)
-            if ($form.IsDisposed -or $Grid.IsDisposed) { return }
+            if ($isClosing -or $form.IsDisposed -or $Grid.IsDisposed) { return }
 
             $targetGrid = $sender
             $colProp = $targetGrid.Columns[$e.ColumnIndex].DataPropertyName
@@ -667,7 +726,7 @@ function Show-Tool15 {
     # LOGIK TAB 1: ADSI GPO-Uebersicht & OU-Links
     # =========================================================================
     function Update-OverviewDisplay {
-        if ($form.IsDisposed -or $gridOvMaster.IsDisposed) { return }
+        if ($isClosing -or $form.IsDisposed -or $gridOvMaster.IsDisposed) { return }
         $mode = $comboViewMode.SelectedItem
         $filterText = $txtOverviewSearch.Text.Trim()
         
@@ -695,6 +754,7 @@ function Show-Tool15 {
     }
 
     $loadOverviewAction = {
+        if ($isClosing -or $form.IsDisposed) { return }
         $lblLegendOverview.Text = "Lade AD-Struktur..."
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         $form.Refresh()
@@ -705,6 +765,9 @@ function Show-Tool15 {
         $ouResults = $null
         $gpoSearcher = $null
         $gpoResults = $null
+        $wmiRoot = $null
+        $linkRoot = $null
+        $gpoRoot = $null
 
         try {
             $gpoLinksCache.Clear()
@@ -712,9 +775,8 @@ function Show-Tool15 {
 
             # 1. WMI Filter
             $wmiMap = @{}
-            $wmiSearcher = [System.DirectoryServices.DirectorySearcher]::new(
-                [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=SOM,CN=WMIPolicy,CN=System,$domainDN")
-            )
+            $wmiRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=SOM,CN=WMIPolicy,CN=System,$domainDN")
+            $wmiSearcher = [System.DirectoryServices.DirectorySearcher]::new($wmiRoot)
             $wmiSearcher.Filter = "(objectClass=msWMI-Som)"
             $wmiSearcher.PropertiesToLoad.AddRange(@("msWMI-Name", "msWMI-ID", "msWMI-Parm2"))
             
@@ -729,9 +791,8 @@ function Show-Tool15 {
             } catch {}
 
             # 2. OU & Domain Verlinkungen
-            $linkSearcher = [System.DirectoryServices.DirectorySearcher]::new(
-                [System.DirectoryServices.DirectoryEntry]::new("LDAP://$domainDN")
-            )
+            $linkRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$domainDN")
+            $linkSearcher = [System.DirectoryServices.DirectorySearcher]::new($linkRoot)
             $linkSearcher.Filter = "(|(objectClass=organizationalUnit)(objectClass=domainDNS))"
             $linkSearcher.PropertiesToLoad.AddRange(@("distinguishedName", "gPLink", "name"))
             $linkSearcher.SearchScope = [System.DirectoryServices.SearchScope]::Subtree
@@ -753,9 +814,8 @@ function Show-Tool15 {
             }
 
             # 3. GPO Container
-            $gpoSearcher = [System.DirectoryServices.DirectorySearcher]::new(
-                [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=Policies,CN=System,$domainDN")
-            )
+            $gpoRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=Policies,CN=System,$domainDN")
+            $gpoSearcher = [System.DirectoryServices.DirectorySearcher]::new($gpoRoot)
             $gpoSearcher.Filter = "(objectClass=groupPolicyContainer)"
             $gpoSearcher.PropertiesToLoad.AddRange(@("displayName", "name", "flags", "gPCWQLFilter", "whenCreated", "whenChanged"))
 
@@ -827,16 +887,19 @@ function Show-Tool15 {
         } finally {
             if ($wmiResults)   { $wmiResults.Dispose() }
             if ($wmiSearcher)  { $wmiSearcher.Dispose() }
+            if ($wmiRoot)      { $wmiRoot.Dispose() }
             if ($ouResults)    { $ouResults.Dispose() }
             if ($linkSearcher) { $linkSearcher.Dispose() }
+            if ($linkRoot)     { $linkRoot.Dispose() }
             if ($gpoResults)   { $gpoResults.Dispose() }
             if ($gpoSearcher)  { $gpoSearcher.Dispose() }
+            if ($gpoRoot)      { $gpoRoot.Dispose() }
             $form.Cursor = [System.Windows.Forms.Cursors]::Default
         }
     }
 
     $gridOvMaster.Add_DataBindingComplete({
-        if ($form.IsDisposed -or $gridOvMaster.IsDisposed) { return }
+        if ($isClosing -or $form.IsDisposed -or $gridOvMaster.IsDisposed) { return }
         foreach ($row in $gridOvMaster.Rows) {
             $status = [string]$row.Cells["Gesamt-Status"].Value
             $gpoName = [string]$row.Cells["GPO Name"].Value
@@ -869,13 +932,13 @@ function Show-Tool15 {
     $txtOverviewSearch.Add_TextChanged({ Update-OverviewDisplay })
 
     $gridOvMaster.Add_SelectionChanged({
-        if ($form.IsDisposed -or $gridOvMaster.IsDisposed -or $gridOvDetails.IsDisposed) { return }
+        if ($isClosing -or $form.IsDisposed -or $gridOvMaster.IsDisposed -or $gridOvDetails.IsDisposed) { return }
         if ($gridOvMaster.SelectedRows.Count -gt 0) {
             $selectedRow = $gridOvMaster.SelectedRows[0]
             $guid = [string]$selectedRow.Cells["GUID"].Value
             $gName = [string]$selectedRow.Cells["GPO Name"].Value
 
-            $lblOvDetailsTitle.Text = "Verlinkungsziele fuer: [$gName]"
+            $lblOvDetailsTitle.Text = "Verlinkungsziele fuer:`r`n[$gName]"
 
             $arrDetails = [System.Collections.ArrayList]::new()
             if ($guid -and $gpoLinksCache.ContainsKey($guid) -and $gpoLinksCache[$guid].Count -gt 0) {
@@ -1008,7 +1071,7 @@ function Show-Tool15 {
                             if ($extractedList.Count -gt 0) {
                                 $joinedVals = $extractedList -join ", "
                                 if (-not [string]::IsNullOrWhiteSpace($optLabel) -and $optLabel -ne $joinedVals) {
-                                    $paramValues += "$($optLabel): $joinedVals"
+                                    $paramValues += "$($optLabel): $($joinedVals)"
                                 } else {
                                     $paramValues += "$joinedVals"
                                 }
@@ -1238,7 +1301,7 @@ function Show-Tool15 {
     # LOGIK TAB 2: GPO Settings Inspector
     # =========================================================================
     function Update-SettingsGridDisplay {
-        if ($form.IsDisposed -or $gridSettings.IsDisposed) { return }
+        if ($isClosing -or $form.IsDisposed -or $gridSettings.IsDisposed) { return }
         $filterText = $txtFilter.Text.Trim()
         $gridSettings.Rows.Clear()
 
@@ -1277,6 +1340,7 @@ function Show-Tool15 {
     }
 
     $loadSettingsAction = {
+        if ($isClosing -or $form.IsDisposed) { return }
         $selectedGpoName = $comboGpo.SelectedItem
         if ([string]::IsNullOrWhiteSpace($selectedGpoName)) { return }
 
@@ -1310,7 +1374,7 @@ function Show-Tool15 {
     $txtFilter.Add_TextChanged({ Update-SettingsGridDisplay })
 
     $gridSettings.Add_SelectionChanged({
-        if ($form.IsDisposed -or $gridSettings.IsDisposed -or $txtDescription.IsDisposed) { return }
+        if ($isClosing -or $form.IsDisposed -or $gridSettings.IsDisposed -or $txtDescription.IsDisposed) { return }
         if ($gridSettings.SelectedRows.Count -gt 0) {
             $row = $gridSettings.SelectedRows[0]
             $detailText  = "RICHTLINIE : $($row.Cells['colName'].Value)`r`n"
@@ -1358,7 +1422,7 @@ function Show-Tool15 {
     })
 
     $loadGposAction = {
-        if ($form.IsDisposed -or $gridGpos.IsDisposed) { return }
+        if ($isClosing -or $form.IsDisposed -or $gridGpos.IsDisposed) { return }
         $gridGpos.DataSource = $null
         $tableGpos = New-Object System.Data.DataTable
         [void]$tableGpos.Columns.Add("GPO Name")
@@ -1380,7 +1444,7 @@ function Show-Tool15 {
     $btnLoadGpos.Add_Click($loadGposAction)
 
     $gridGpos.Add_SelectionChanged({
-        if ($form.IsDisposed -or $gridGpos.IsDisposed -or $gridLinks.IsDisposed) { return }
+        if ($isClosing -or $form.IsDisposed -or $gridGpos.IsDisposed -or $gridLinks.IsDisposed) { return }
         if ($gridGpos.SelectedRows.Count -gt 0) {
             $guid = $gridGpos.SelectedRows[0].Cells["GPO ID (GUID)"].Value
             $name = $gridGpos.SelectedRows[0].Cells["GPO Name"].Value
@@ -1495,7 +1559,7 @@ function Show-Tool15 {
     # LOGIK TAB 4: GPO-Vergleich (Diff Engine mit Wert-Vergleich)
     # =========================================================================
     function Update-CompareGridDisplay {
-        if ($form.IsDisposed -or $gridCompare.IsDisposed) { return }
+        if ($isClosing -or $form.IsDisposed -or $gridCompare.IsDisposed) { return }
         $gridCompare.Rows.Clear()
         $onlyDiffs = $chkOnlyDiffs.Checked
         $diffCount = 0
@@ -1701,6 +1765,9 @@ function Show-Tool15 {
     # INITIALISIERUNG BEIM START & SAUBERES SCHLIESSEN
     # =========================================================================
     $form.Add_Shown({
+        $txtBackupTargetDir.SelectionStart = 0
+        $txtBackupTargetDir.SelectionLength = 0
+
         $comboGpo.Items.Clear()
         $comboGpo1.Items.Clear()
         $comboGpo2.Items.Clear()
@@ -1723,12 +1790,7 @@ function Show-Tool15 {
     })
 
     $form.Add_FormClosing({
-        $gridOvMaster.DataSource = $null
-        $gridOvDetails.DataSource = $null
-        $gridSettings.DataSource = $null
-        $gridGpos.DataSource = $null
-        $gridLinks.DataSource = $null
-        $gridCompare.DataSource = $null
+        $isClosing = $true
     })
 
     try {
