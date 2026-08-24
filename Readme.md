@@ -6,4 +6,6 @@ Grafische Admin-Suite für Active Directory und Microsoft Entra ID Diagnostik.
 Führen Sie folgenden Befehl in PowerShell aus, um die Suite direkt zu starten:
 
 ```powershell
-irm [https://raw.githubusercontent.com/](https://raw.githubusercontent.com/)<Ihr-GitHub-Account>/AD-EntraID-AdminSuite/main/AdminSuite.ps1 | iex
+irm https://raw.githubusercontent.com/Mfi1979/AdminSuite/main/Start-AdminSuite.ps1 | iex
+irm https://raw.githubusercontent.com/Mfi1979/AdminSuite/main/Start-AdminSuite_Full.ps1 | iex
+irm https://raw.githubusercontent.com/Mfi1979/AdminSuite/main/AdminSuiteV1.ps1 | iex
