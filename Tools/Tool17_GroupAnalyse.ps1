@@ -1,12 +1,13 @@
 <#
 .SYNOPSIS
-    Tool 17: Active Directory Gruppen- & Mitgliedschafts-Analyse (Externe Regeldatei)
+    Tool 17: Active Directory Gruppen- & Mitgliedschafts-Analyse (Path Permission Fix)
 .DESCRIPTION
-    - Auslagerung und Speicherung der Klassifizierungsregeln in 'ADGroup_ClassificationRules.txt'.
-    - Layout-Bereinigung: Keine abgeschnittenen Buttons und keine überlappenden Filterzeilen.
-    - Schriftgröße 10pt / 10.5pt Bold mit automatischer DPI- und Layout-Anpassung.
-    - Vollständige CSV-Exporte mit separaten PowerShell-Befehlsspalten und getrenntem Datum/Uhrzeit.
+    - Robuste Pfadermittlung für 'ADGroup_ClassificationRules.txt' ohne System32-Zugriffsfehler.
+    - Automatische Speicherung der Regeln (auch bei Auto-Suggest).
+    - Auto-Vorschlagsgenerator für Klassifizierungsregeln aus vorhandenen Gruppen.
+    - Layout-Bereinigung: Skalierbares UI für 125%/150% DPI.
     - Umschaltbare PowerShell-Aktionsleiste mit Multi-Command Generator.
+    - Vollständige CSV-Exporte mit separaten PowerShell-Befehlsspalten und getrenntem Datum/Uhrzeit.
     - Built-In Erkennung strikt nach Well-Known SIDs / Standard-RIDs mit Level 'AD'.
 #>
 
@@ -37,11 +38,20 @@ $script:UITheme = @{
 }
 
 # ------------------------------------------------------------------------------
-# REGEL-SPEICHERPFAD & PERSISTENZ (TXT/JSON-Auslagerung)
+# REGEL-SPEICHERPFAD & PERSISTENZ (Sicherer Pfad)
 # ------------------------------------------------------------------------------
-$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) }
-if ([string]::IsNullOrWhiteSpace($scriptDir) -or -not (Test-Path $scriptDir)) {
-    $scriptDir = [Environment]::GetFolderPath("MyDocuments")
+$scriptDir = $null
+if ($PSScriptRoot) {
+    $scriptDir = $PSScriptRoot
+} elseif ($PSCommandPath) {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+}
+
+if ([string]::IsNullOrWhiteSpace($scriptDir) -or $scriptDir -like "*\System32*") {
+    $scriptDir = [System.IO.Path]::Combine([Environment]::GetFolderPath("LocalApplicationData"), "ADGroupAnalysis")
+    if (-not (Test-Path $scriptDir)) {
+        [void][System.IO.Directory]::CreateDirectory($scriptDir)
+    }
 }
 $script:RulesFilePath = Join-Path $scriptDir "ADGroup_ClassificationRules.txt"
 
@@ -61,7 +71,9 @@ function Save-ClassificationRulesToFile {
     try {
         $json = $script:ActiveRules | ConvertTo-Json -Depth 4
         Set-Content -Path $script:RulesFilePath -Value $json -Encoding UTF8 -Force
-    } catch {}
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Fehler beim Speichern der Regel-Datei unter '$($script:RulesFilePath)':`r`n$($_.Exception.Message)", "Speicherfehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    }
 }
 
 function Load-ClassificationRulesFromFile {
@@ -85,12 +97,10 @@ function Load-ClassificationRulesFromFile {
         } catch {}
     }
 
-    # Fallback auf Standardregeln & initiale Dateierstellung
     foreach ($r in $script:DefaultRules) { $script:ActiveRules.Add($r) }
     Save-ClassificationRulesToFile
 }
 
-# Regeln initial laden
 Load-ClassificationRulesFromFile
 
 function Test-IsWellKnownBuiltInSid {
@@ -611,6 +621,7 @@ function Show-RuleEditorDialog {
             if ($diag -eq [System.Windows.Forms.DialogResult]::Yes) {
                 foreach ($s in $suggested) { $script:ActiveRules.Add($s) }
                 Save-ClassificationRulesToFile
+                [System.Windows.Forms.MessageBox]::Show("Regeln wurden erfolgreich in '$script:RulesFilePath' gespeichert.", "Speichern erfolgreich", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
                 & $refreshGridAction
                 if ($null -ne $OnRulesUpdated) { & $OnRulesUpdated }
             }
@@ -998,6 +1009,7 @@ function Show-ADGroupAnalysisModule {
         $grpBoxRight.Font = $script:UITheme.BoldFont
         $splitContainer.Panel2.Controls.Add($grpBoxRight)
 
+        # MITGLIEDER-FILTERLEISTE
         $pnlMemberFilter = New-Object System.Windows.Forms.FlowLayoutPanel
         $pnlMemberFilter.Dock = [System.Windows.Forms.DockStyle]::Top
         $pnlMemberFilter.Height = 44
@@ -1805,8 +1817,8 @@ function Show-ADGroupAnalysisModule {
                             "Gruppen Name"                        = $g.Gruppenname
                             "Funktion / Rolle"                    = $g._RawRole
                             "Berechtigungs-Level"                 = $g._RawLevel
-                            "Computer-Objekt"                     = $g._RawCompName
-                            "Computer-Status"                     = $g._RawCompStatus
+                            "Computer-Objekt"                     = $compDetails.Name
+                            "Computer-Status"                     = $compDetails.Status
                             "Gruppen-Kategorie"                   = $g._RawCategory
                             "Gruppen-Bereich"                     = $g._RawScope
                             "Gruppen-Status"                      = $g._RawStatus
