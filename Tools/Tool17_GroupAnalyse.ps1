@@ -1,15 +1,13 @@
 <#
 .SYNOPSIS
-    Tool 17: Active Directory Gruppen- & Mitgliedschafts-Analyse (CSV-Export mit PowerShell-Befehlsspalten)
+    Tool 17: Active Directory Gruppen- & Mitgliedschafts-Analyse (Externe Regeldatei)
 .DESCRIPTION
-    - CSV-Gruppen-Export enthält für jeden PowerShell-Befehl eine eigene Spalte.
-    - Beschreibungs-Editor generiert 'Set-ADGroup -Description' Vorschau-Befehl.
-    - Umschaltbare PowerShell-Aktionen (Scope-Wechsel, Löschen, Leeren, Schutz, Abfragen).
-    - Mehrzeilige Befehlsbox für Einzel- und Mehrfachauswahl.
-    - Vollständige Zwischenablage-Unterstützung (Strg+A, Strg+C, Multi-Select).
+    - Auslagerung und Speicherung der Klassifizierungsregeln in 'ADGroup_ClassificationRules.txt'.
+    - Layout-Bereinigung: Keine abgeschnittenen Buttons und keine überlappenden Filterzeilen.
+    - Schriftgröße 10pt / 10.5pt Bold mit automatischer DPI- und Layout-Anpassung.
+    - Vollständige CSV-Exporte mit separaten PowerShell-Befehlsspalten und getrenntem Datum/Uhrzeit.
+    - Umschaltbare PowerShell-Aktionsleiste mit Multi-Command Generator.
     - Built-In Erkennung strikt nach Well-Known SIDs / Standard-RIDs mit Level 'AD'.
-    - 2 Spalten für Computer-Gegenprüfung (Inaktiv = Gelb, Nicht vorhanden/Leer = Rot).
-    - CSV-Exporte mit getrennten Spalten für Datum (JJJJMMDD) und Uhrzeit (HH:mm:ss).
 #>
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -25,10 +23,12 @@ if (-not [System.Windows.Forms.Application]::RenderWithVisualStyles) {
 # THEME & LAYOUT HELPER
 # ------------------------------------------------------------------------------
 $script:UITheme = @{
-    HeaderHeight       = 44
-    RowHeight          = 24
-    HeaderFont         = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-    CellFont           = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Regular)
+    HeaderHeight       = 48
+    RowHeight          = 28
+    HeaderFont         = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
+    CellFont           = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Regular)
+    BaseFont           = New-Object System.Drawing.Font("Segoe UI", 10.0, [System.Drawing.FontStyle]::Regular)
+    BoldFont           = New-Object System.Drawing.Font("Segoe UI", 10.0, [System.Drawing.FontStyle]::Bold)
     HeaderBackColor    = [System.Drawing.Color]::FromArgb(238, 242, 246)
     HeaderForeColor    = [System.Drawing.Color]::FromArgb(30, 41, 59)
     GridLineColor      = [System.Drawing.Color]::FromArgb(226, 232, 240)
@@ -37,75 +37,67 @@ $script:UITheme = @{
 }
 
 # ------------------------------------------------------------------------------
-# REGELWERK ZUR GRUPPEN-KLASSIFIZIERUNG
+# REGEL-SPEICHERPFAD & PERSISTENZ (TXT/JSON-Auslagerung)
 # ------------------------------------------------------------------------------
+$scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent ([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) }
+if ([string]::IsNullOrWhiteSpace($scriptDir) -or -not (Test-Path $scriptDir)) {
+    $scriptDir = [Environment]::GetFolderPath("MyDocuments")
+}
+$script:RulesFilePath = Join-Path $scriptDir "ADGroup_ClassificationRules.txt"
+
 $script:DefaultRules = @(
-    [PSCustomObject]@{
-        Kennung       = "Azure"
-        Suchmuster    = "^AD-AAD-"
-        RollenName    = "Azure"
-        LevelModus    = "Azure-Sub"
-        LevelDetails  = "Intune=Intune"
-    },
-    [PSCustomObject]@{
-        Kennung       = "GPO"
-        Suchmuster    = "^GPO-"
-        RollenName    = "Group Policy"
-        LevelModus    = "GPO-Sub"
-        LevelDetails  = "GPO-COM-=Computer;GPO-USR-=Benutzer;GPO-MIX-=Computer/User"
-    },
-    [PSCustomObject]@{
-        Kennung       = "RDP"
-        Suchmuster    = "(-RDP$|^RDP-)"
-        RollenName    = "Remote Desktop"
-        LevelModus    = "Keiner"
-        LevelDetails  = "-"
-    },
-    [PSCustomObject]@{
-        Kennung       = "LokalAdmin"
-        Suchmuster    = "(-lokalAdmin$|-localAdmin$)"
-        RollenName    = "Lokaler Administrator"
-        LevelModus    = "Festwert"
-        LevelDetails  = "Administrator"
-    },
-    [PSCustomObject]@{
-        Kennung       = "FSR"
-        Suchmuster    = "(^FSR-|^.*-FSR-)"
-        RollenName    = "File Server Rights"
-        LevelModus    = "FSR-Rechte"
-        LevelDetails  = "-FC=Full Control;-RW=Read Write;-RO=Read Only;-FL=Folder List"
-    },
-    [PSCustomObject]@{
-        Kennung       = "Laufwerk"
-        Suchmuster    = "^Laufwerk-?"
-        RollenName    = "Laufwerk"
-        LevelModus    = "Keiner"
-        LevelDetails  = "-"
-    },
-    [PSCustomObject]@{
-        Kennung       = "Drucker"
-        Suchmuster    = "(^Printer-|^Drucker-)"
-        RollenName    = "Drucker"
-        LevelModus    = "Keiner"
-        LevelDetails  = "-"
-    }
+    [PSCustomObject]@{ Kennung = "Azure";      Suchmuster = "^AD-AAD-";                 RollenName = "Azure";                 LevelModus = "Azure-Sub"; LevelDetails = "Intune=Intune" },
+    [PSCustomObject]@{ Kennung = "GPO";        Suchmuster = "^GPO-";                    RollenName = "Group Policy";          LevelModus = "GPO-Sub";   LevelDetails = "GPO-COM-=Computer;GPO-USR-=Benutzer;GPO-MIX-=Computer/User" },
+    [PSCustomObject]@{ Kennung = "RDP";        Suchmuster = "(-RDP$|^RDP-)";            RollenName = "Remote Desktop";        LevelModus = "Keiner";    LevelDetails = "-" },
+    [PSCustomObject]@{ Kennung = "LokalAdmin"; Suchmuster = "(-lokalAdmin$|-localAdmin$)"; RollenName = "Lokaler Administrator"; LevelModus = "Festwert"; LevelDetails = "Administrator" },
+    [PSCustomObject]@{ Kennung = "FSR";        Suchmuster = "(^FSR-|^.*-FSR-)";         RollenName = "File Server Rights";    LevelModus = "FSR-Rechte";LevelDetails = "-FC=Full Control;-RW=Read Write;-RO=Read Only;-FL=Folder List" },
+    [PSCustomObject]@{ Kennung = "Laufwerk";   Suchmuster = "^(Laufwerk|lw_)-?";        RollenName = "Laufwerk";              LevelModus = "Keiner";    LevelDetails = "-" },
+    [PSCustomObject]@{ Kennung = "Drucker";    Suchmuster = "(^Printer-|^Drucker-)";    RollenName = "Drucker";               LevelModus = "Keiner";    LevelDetails = "-" }
 )
 
 $script:ActiveRules = [System.Collections.Generic.List[PSCustomObject]]::new()
-foreach ($r in $script:DefaultRules) { $script:ActiveRules.Add($r) }
 
-# ------------------------------------------------------------------------------
-# PRÜFUNG AUF WELL-KNOWN BUILT-IN SIDS
-# ------------------------------------------------------------------------------
+function Save-ClassificationRulesToFile {
+    try {
+        $json = $script:ActiveRules | ConvertTo-Json -Depth 4
+        Set-Content -Path $script:RulesFilePath -Value $json -Encoding UTF8 -Force
+    } catch {}
+}
+
+function Load-ClassificationRulesFromFile {
+    $script:ActiveRules.Clear()
+    if (Test-Path $script:RulesFilePath) {
+        try {
+            $content = Get-Content -Path $script:RulesFilePath -Raw -Encoding UTF8
+            if (-not [string]::IsNullOrWhiteSpace($content)) {
+                $loaded = $content | ConvertFrom-Json
+                foreach ($item in $loaded) {
+                    $script:ActiveRules.Add([PSCustomObject]@{
+                        Kennung      = [string]$item.Kennung
+                        Suchmuster   = [string]$item.Suchmuster
+                        RollenName   = [string]$item.RollenName
+                        LevelModus   = [string]$item.LevelModus
+                        LevelDetails = [string]$item.LevelDetails
+                    })
+                }
+                return
+            }
+        } catch {}
+    }
+
+    # Fallback auf Standardregeln & initiale Dateierstellung
+    foreach ($r in $script:DefaultRules) { $script:ActiveRules.Add($r) }
+    Save-ClassificationRulesToFile
+}
+
+# Regeln initial laden
+Load-ClassificationRulesFromFile
+
 function Test-IsWellKnownBuiltInSid {
     param([string]$SidString)
     if ([string]::IsNullOrWhiteSpace($SidString)) { return $false }
-
     if ($SidString -match "^S-1-5-32-\d+$") { return $true }
-    if ($SidString -match "^S-1-5-(?:9|11|21-[0-9\-]+-(?:498|500|501|502|512|513|514|515|516|517|518|519|520|521|522|525|526|527|553|571|572))$") {
-        return $true
-    }
-
+    if ($SidString -match "^S-1-5-(?:9|11|21-[0-9\-]+-(?:498|500|501|502|512|513|514|515|516|517|518|519|520|521|522|525|526|527|553|571|572))$") { return $true }
     return $false
 }
 
@@ -115,19 +107,16 @@ function Get-CustomGroupClassification {
         [string]$SidString = ""
     )
 
-    $isBuiltIn = Test-IsWellKnownBuiltInSid -SidString $SidString
-
-    if ($isBuiltIn) {
-        return [PSCustomObject]@{
-            Role  = "Built-In"
-            Level = "AD"
-        }
+    if (Test-IsWellKnownBuiltInSid -SidString $SidString) {
+        return [PSCustomObject]@{ Role = "Built-In"; Level = "AD" }
     }
 
     foreach ($rule in $script:ActiveRules) {
-        if ($GroupName -match $rule.Suchmuster) {
-            $levelVal = "-"
+        $matched = $false
+        try { $matched = ($GroupName -match $rule.Suchmuster) } catch { $matched = $false }
 
+        if ($matched) {
+            $levelVal = "-"
             if ($rule.LevelModus -eq "Festwert") {
                 $levelVal = $rule.LevelDetails
             } elseif ($rule.LevelModus -eq "Azure-Sub") {
@@ -152,25 +141,14 @@ function Get-CustomGroupClassification {
                     }
                 }
             }
-
-            return [PSCustomObject]@{
-                Role  = $rule.RollenName
-                Level = $levelVal
-            }
+            return [PSCustomObject]@{ Role = $rule.RollenName; Level = $levelVal }
         }
     }
-
-    return [PSCustomObject]@{
-        Role  = "Benutzer"
-        Level = "-"
-    }
+    return [PSCustomObject]@{ Role = "Benutzer"; Level = "-" }
 }
 
 function Extract-TargetComputerName {
-    param(
-        [string]$GroupName,
-        [string]$Role
-    )
+    param([string]$GroupName, [string]$Role)
     if ($Role -eq "Lokaler Administrator") {
         if ($GroupName -match "^(.+)-(?:lokalAdmin|localAdmin)$") { return $Matches[1].Trim() }
         if ($GroupName -match "^(?:lokalAdmin|localAdmin)-(.+)$") { return $Matches[1].Trim() }
@@ -179,6 +157,55 @@ function Extract-TargetComputerName {
         if ($GroupName -match "^RDP-(.+)$") { return $Matches[1].Trim() }
     }
     return $null
+}
+
+function Get-AutoSuggestedRules {
+    param([System.Collections.Generic.List[PSCustomObject]]$GroupsList)
+
+    $suggestions = [System.Collections.Generic.List[PSCustomObject]]::new()
+    if ($null -eq $GroupsList -or $GroupsList.Count -eq 0) { return $suggestions }
+
+    $prefixCounts = @{}
+    foreach ($g in $GroupsList) {
+        $name = $g.Gruppenname
+        if ($name -match "^([a-zA-Z0-9]{2,12})[-_]") {
+            $p = $Matches[1]
+            if ($p -notmatch "^(Azure|GPO|RDP|FSR|Laufwerk|Drucker)$") {
+                if (-not $prefixCounts.ContainsKey($p)) { $prefixCounts[$p] = 0 }
+                $prefixCounts[$p]++
+            }
+        }
+    }
+
+    foreach ($key in $prefixCounts.Keys) {
+        if ($prefixCounts[$key] -ge 2) {
+            $regexPattern = "^$([regex]::Escape($key))[-_]"
+            $alreadyExists = $script:ActiveRules | Where-Object { $_.Suchmuster -eq $regexPattern -or $_.Kennung -eq $key }
+            if (-not $alreadyExists) {
+                $roleGuess = switch -Wildcard ($key) {
+                    "*VPN*"   { "VPN Zugriff" }
+                    "*SEC*"   { "Sicherheitsgruppe" }
+                    "*SG*"    { "Sicherheitsgruppe" }
+                    "*APP*"   { "Software / App" }
+                    "*SW*"    { "Softwareverteilung" }
+                    "*M365*"  { "Cloud / M365" }
+                    "*O365*"  { "Cloud / O365" }
+                    "*FS*"    { "File Server" }
+                    "*SHARE*" { "Freigabe-Berechtigung" }
+                    Default   { "$key Rolle" }
+                }
+
+                $suggestions.Add([PSCustomObject]@{
+                    Kennung      = $key
+                    Suchmuster   = $regexPattern
+                    RollenName   = $roleGuess
+                    LevelModus   = "Keiner"
+                    LevelDetails = "-"
+                })
+            }
+        }
+    }
+    return $suggestions
 }
 
 function Apply-StandardGridTheme {
@@ -245,12 +272,7 @@ function Enable-UniversalGridSorting {
         }
 
         $state = $targetGrid.Tag
-        if ($state.LastCol -eq $propName) {
-            $state.Asc = -not $state.Asc
-        } else {
-            $state.LastCol = $propName
-            $state.Asc = $true
-        }
+        if ($state.LastCol -eq $propName) { $state.Asc = -not $state.Asc } else { $state.LastCol = $propName; $state.Asc = $true }
 
         $items = @($targetGrid.DataSource)
         if ($null -eq $items -or $items.Count -le 1) { return }
@@ -260,18 +282,12 @@ function Enable-UniversalGridSorting {
                 Expression = {
                     $item = $_
                     if ($null -eq $item) { return "" }
-                    
                     $val = $item.$propName
                     if ($null -eq $val -or $val -eq "" -or $val -eq "-") { return "" }
-
                     if ($val -as [int]) { return [int]$val }
-
                     if ($val -match '^\d{2}\.\d{2}\.\d{4}') {
-                        try {
-                            return [datetime]::ParseExact($val.ToString().Trim(), @("dd.MM.yyyy HH:mm", "dd.MM.yyyy HH:mm:ss", "dd.MM.yyyy"), $null)
-                        } catch { return $val }
+                        try { return [datetime]::ParseExact($val.ToString().Trim(), @("dd.MM.yyyy HH:mm", "dd.MM.yyyy HH:mm:ss", "dd.MM.yyyy"), $null) } catch { return $val }
                     }
-
                     return $val
                 }
                 Descending = (-not $state.Asc)
@@ -283,9 +299,7 @@ function Enable-UniversalGridSorting {
             $targetGrid.DataSource = $null
             $targetGrid.DataSource = $arr
 
-            foreach ($c in $targetGrid.Columns) {
-                $c.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
-            }
+            foreach ($c in $targetGrid.Columns) { $c.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None }
             $targetGrid.Columns[$e.ColumnIndex].HeaderCell.SortGlyphDirection = `
                 $(if ($state.Asc) { [System.Windows.Forms.SortOrder]::Ascending } else { [System.Windows.Forms.SortOrder]::Descending })
 
@@ -298,50 +312,45 @@ function Enable-UniversalGridSorting {
 # POPUP-GUI: BESCHREIBUNGS-EDITOR
 # ------------------------------------------------------------------------------
 function Show-EditDescriptionDialog {
-    param(
-        [string]$GroupName,
-        [string]$CurrentDescription
-    )
+    param([string]$GroupName, [string]$CurrentDescription)
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Beschreibung bearbeiten: $GroupName"
-    $dlg.Size = New-Object System.Drawing.Size(600, 370)
+    $dlg.Size = New-Object System.Drawing.Size(650, 420)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     $dlg.MaximizeBox = $false
     $dlg.MinimizeBox = $false
-    $dlg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $dlg.Font = $script:UITheme.BaseFont
     $dlg.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
     $lblOld = New-Object System.Windows.Forms.Label
     $lblOld.Text = "Aktuelle Beschreibung:"
     $lblOld.Location = New-Object System.Drawing.Point(15, 12)
-    $lblOld.Size = New-Object System.Drawing.Size(550, 18)
-    $lblOld.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-    $lblOld.ForeColor = [System.Drawing.Color]::FromArgb(60, 70, 80)
+    $lblOld.Size = New-Object System.Drawing.Size(600, 20)
+    $lblOld.Font = $script:UITheme.BoldFont
     $dlg.Controls.Add($lblOld)
 
     $txtOld = New-Object System.Windows.Forms.TextBox
-    $txtOld.Location = New-Object System.Drawing.Point(15, 32)
-    $txtOld.Size = New-Object System.Drawing.Size(550, 50)
+    $txtOld.Location = New-Object System.Drawing.Point(15, 35)
+    $txtOld.Size = New-Object System.Drawing.Size(600, 55)
     $txtOld.Multiline = $true
     $txtOld.ReadOnly = $true
     $txtOld.BackColor = [System.Drawing.Color]::FromArgb(238, 242, 246)
-    $txtOld.ForeColor = [System.Drawing.Color]::FromArgb(30, 41, 59)
     $txtOld.Text = if ([string]::IsNullOrWhiteSpace($CurrentDescription)) { "(Keine Beschreibung hinterlegt)" } else { $CurrentDescription }
     $dlg.Controls.Add($txtOld)
 
     $lblNew = New-Object System.Windows.Forms.Label
     $lblNew.Text = "Neue Beschreibung eingeben (generiert PowerShell-Befehl):"
-    $lblNew.Location = New-Object System.Drawing.Point(15, 92)
-    $lblNew.Size = New-Object System.Drawing.Size(550, 18)
-    $lblNew.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+    $lblNew.Location = New-Object System.Drawing.Point(15, 100)
+    $lblNew.Size = New-Object System.Drawing.Size(600, 20)
+    $lblNew.Font = $script:UITheme.BoldFont
     $lblNew.ForeColor = [System.Drawing.Color]::FromArgb(0, 102, 204)
     $dlg.Controls.Add($lblNew)
 
     $txtNew = New-Object System.Windows.Forms.TextBox
-    $txtNew.Location = New-Object System.Drawing.Point(15, 112)
-    $txtNew.Size = New-Object System.Drawing.Size(550, 130)
+    $txtNew.Location = New-Object System.Drawing.Point(15, 125)
+    $txtNew.Size = New-Object System.Drawing.Size(600, 150)
     $txtNew.Multiline = $true
     $txtNew.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
     $txtNew.Text = $CurrentDescription
@@ -349,19 +358,19 @@ function Show-EditDescriptionDialog {
 
     $btnGenerate = New-Object System.Windows.Forms.Button
     $btnGenerate.Text = "Befehl uebernehmen"
-    $btnGenerate.Location = New-Object System.Drawing.Point(280, 265)
-    $btnGenerate.Size = New-Object System.Drawing.Size(160, 32)
+    $btnGenerate.Location = New-Object System.Drawing.Point(280, 290)
+    $btnGenerate.Size = New-Object System.Drawing.Size(185, 36)
     $btnGenerate.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
     $btnGenerate.ForeColor = [System.Drawing.Color]::White
     $btnGenerate.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btnGenerate.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $btnGenerate.Font = $script:UITheme.BoldFont
     $btnGenerate.DialogResult = [System.Windows.Forms.DialogResult]::OK
     $dlg.Controls.Add($btnGenerate)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Abbrechen"
-    $btnCancel.Location = New-Object System.Drawing.Point(450, 265)
-    $btnCancel.Size = New-Object System.Drawing.Size(115, 32)
+    $btnCancel.Location = New-Object System.Drawing.Point(480, 290)
+    $btnCancel.Size = New-Object System.Drawing.Size(135, 36)
     $btnCancel.BackColor = [System.Drawing.Color]::FromArgb(230, 235, 240)
     $btnCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
@@ -383,25 +392,28 @@ function Show-EditDescriptionDialog {
 }
 
 # ------------------------------------------------------------------------------
-# POPUP-GUI: REGEL-EDITOR
+# POPUP-GUI: REGEL-EDITOR (Speichert automatisch in TXT-Datei)
 # ------------------------------------------------------------------------------
 function Show-RuleEditorDialog {
-    param([scriptblock]$OnRulesUpdated)
+    param(
+        [scriptblock]$OnRulesUpdated,
+        [System.Collections.Generic.List[PSCustomObject]]$CurrentGroups
+    )
 
     $ruleForm = New-Object System.Windows.Forms.Form
-    $ruleForm.Text = "Regel-Editor: AD Gruppen-Klassifizierung & Rollen"
-    $ruleForm.Size = New-Object System.Drawing.Size(950, 580)
-    $ruleForm.MinimumSize = New-Object System.Drawing.Size(800, 450)
+    $ruleForm.Text = "Regel-Editor: AD Gruppen-Klassifizierung (Datei: $script:RulesFilePath)"
+    $ruleForm.Size = New-Object System.Drawing.Size(1080, 680)
+    $ruleForm.MinimumSize = New-Object System.Drawing.Size(900, 520)
     $ruleForm.StartPosition = "CenterParent"
-    $ruleForm.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $ruleForm.Font = $script:UITheme.BaseFont
     $ruleForm.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
     try {
         $pnlEdit = New-Object System.Windows.Forms.GroupBox
         $pnlEdit.Text = "Regel hinzufuegen / bearbeiten"
         $pnlEdit.Dock = [System.Windows.Forms.DockStyle]::Top
-        $pnlEdit.Height = 135
-        $pnlEdit.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+        $pnlEdit.Height = 155
+        $pnlEdit.Font = $script:UITheme.BoldFont
         $ruleForm.Controls.Add($pnlEdit)
 
         $lblK = New-Object System.Windows.Forms.Label
@@ -411,41 +423,45 @@ function Show-RuleEditorDialog {
         $pnlEdit.Controls.Add($lblK)
 
         $txtK = New-Object System.Windows.Forms.TextBox
-        $txtK.Location = New-Object System.Drawing.Point(15, 45)
-        $txtK.Size = New-Object System.Drawing.Size(120, 23)
+        $txtK.Location = New-Object System.Drawing.Point(15, 48)
+        $txtK.Size = New-Object System.Drawing.Size(130, 25)
+        $txtK.Font = $script:UITheme.BaseFont
         $pnlEdit.Controls.Add($txtK)
 
         $lblM = New-Object System.Windows.Forms.Label
         $lblM.Text = "Suchmuster (Regex/Endung):"
-        $lblM.Location = New-Object System.Drawing.Point(145, 25)
+        $lblM.Location = New-Object System.Drawing.Point(155, 25)
         $lblM.AutoSize = $true
         $pnlEdit.Controls.Add($lblM)
 
         $txtM = New-Object System.Windows.Forms.TextBox
-        $txtM.Location = New-Object System.Drawing.Point(145, 45)
-        $txtM.Size = New-Object System.Drawing.Size(180, 23)
+        $txtM.Location = New-Object System.Drawing.Point(155, 48)
+        $txtM.Size = New-Object System.Drawing.Size(220, 25)
+        $txtM.Font = $script:UITheme.BaseFont
         $pnlEdit.Controls.Add($txtM)
 
         $lblR = New-Object System.Windows.Forms.Label
         $lblR.Text = "Rollenname / Funktion:"
-        $lblR.Location = New-Object System.Drawing.Point(335, 25)
+        $lblR.Location = New-Object System.Drawing.Point(385, 25)
         $lblR.AutoSize = $true
         $pnlEdit.Controls.Add($lblR)
 
         $txtR = New-Object System.Windows.Forms.TextBox
-        $txtR.Location = New-Object System.Drawing.Point(335, 45)
-        $txtR.Size = New-Object System.Drawing.Size(180, 23)
+        $txtR.Location = New-Object System.Drawing.Point(385, 48)
+        $txtR.Size = New-Object System.Drawing.Size(220, 25)
+        $txtR.Font = $script:UITheme.BaseFont
         $pnlEdit.Controls.Add($txtR)
 
         $lblMod = New-Object System.Windows.Forms.Label
         $lblMod.Text = "Level-Modus:"
-        $lblMod.Location = New-Object System.Drawing.Point(525, 25)
+        $lblMod.Location = New-Object System.Drawing.Point(615, 25)
         $lblMod.AutoSize = $true
         $pnlEdit.Controls.Add($lblMod)
 
         $cmbMod = New-Object System.Windows.Forms.ComboBox
-        $cmbMod.Location = New-Object System.Drawing.Point(525, 45)
-        $cmbMod.Size = New-Object System.Drawing.Size(130, 23)
+        $cmbMod.Location = New-Object System.Drawing.Point(615, 48)
+        $cmbMod.Size = New-Object System.Drawing.Size(160, 25)
+        $cmbMod.Font = $script:UITheme.BaseFont
         $cmbMod.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
         [void]$cmbMod.Items.AddRange(@("Keiner", "Festwert", "FSR-Rechte", "Azure-Sub", "GPO-Sub"))
         $cmbMod.SelectedIndex = 0
@@ -453,23 +469,25 @@ function Show-RuleEditorDialog {
 
         $lblDet = New-Object System.Windows.Forms.Label
         $lblDet.Text = "Level-Details (Festwert oder Suffix=Text;):"
-        $lblDet.Location = New-Object System.Drawing.Point(15, 75)
+        $lblDet.Location = New-Object System.Drawing.Point(15, 82)
         $lblDet.AutoSize = $true
         $pnlEdit.Controls.Add($lblDet)
 
         $txtDet = New-Object System.Windows.Forms.TextBox
-        $txtDet.Location = New-Object System.Drawing.Point(15, 95)
-        $txtDet.Size = New-Object System.Drawing.Size(500, 23)
+        $txtDet.Location = New-Object System.Drawing.Point(15, 106)
+        $txtDet.Size = New-Object System.Drawing.Size(590, 25)
+        $txtDet.Font = $script:UITheme.BaseFont
         $txtDet.Text = "-"
         $pnlEdit.Controls.Add($txtDet)
 
         $btnAddRule = New-Object System.Windows.Forms.Button
         $btnAddRule.Text = "Hinzufuegen / Speichern"
-        $btnAddRule.Location = New-Object System.Drawing.Point(525, 93)
-        $btnAddRule.Size = New-Object System.Drawing.Size(180, 26)
+        $btnAddRule.Location = New-Object System.Drawing.Point(615, 102)
+        $btnAddRule.Size = New-Object System.Drawing.Size(220, 32)
         $btnAddRule.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
         $btnAddRule.ForeColor = [System.Drawing.Color]::White
         $btnAddRule.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        $btnAddRule.Font = $script:UITheme.BoldFont
         $pnlEdit.Controls.Add($btnAddRule)
 
         $gridRules = New-Object System.Windows.Forms.DataGridView
@@ -479,25 +497,36 @@ function Show-RuleEditorDialog {
         $ruleForm.Controls.Add($gridRules)
         $gridRules.BringToFront()
 
-        $pnlBottom = New-Object System.Windows.Forms.Panel
+        $pnlBottom = New-Object System.Windows.Forms.FlowLayoutPanel
         $pnlBottom.Dock = [System.Windows.Forms.DockStyle]::Bottom
-        $pnlBottom.Height = 50
+        $pnlBottom.Height = 60
         $pnlBottom.BackColor = [System.Drawing.Color]::FromArgb(240, 243, 246)
+        $pnlBottom.Padding = New-Object System.Windows.Forms.Padding(10, 10, 10, 10)
         $ruleForm.Controls.Add($pnlBottom)
 
         $btnDelete = New-Object System.Windows.Forms.Button
         $btnDelete.Text = "Ausgewaehlte loeschen"
-        $btnDelete.Location = New-Object System.Drawing.Point(15, 10)
-        $btnDelete.Size = New-Object System.Drawing.Size(170, 30)
+        $btnDelete.AutoSize = $true
+        $btnDelete.Height = 36
         $btnDelete.BackColor = [System.Drawing.Color]::FromArgb(180, 40, 40)
         $btnDelete.ForeColor = [System.Drawing.Color]::White
         $btnDelete.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
         $pnlBottom.Controls.Add($btnDelete)
 
+        $btnAutoSuggest = New-Object System.Windows.Forms.Button
+        $btnAutoSuggest.Text = "Vorschlaege aus Gruppen generieren"
+        $btnAutoSuggest.AutoSize = $true
+        $btnAutoSuggest.Height = 36
+        $btnAutoSuggest.BackColor = [System.Drawing.Color]::FromArgb(40, 120, 180)
+        $btnAutoSuggest.ForeColor = [System.Drawing.Color]::White
+        $btnAutoSuggest.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        $btnAutoSuggest.Font = $script:UITheme.BoldFont
+        $pnlBottom.Controls.Add($btnAutoSuggest)
+
         $btnReset = New-Object System.Windows.Forms.Button
-        $btnReset.Text = "Auf Standard zuruecksetzen"
-        $btnReset.Location = New-Object System.Drawing.Point(195, 10)
-        $btnReset.Size = New-Object System.Drawing.Size(200, 30)
+        $btnReset.Text = "Standard wiederherstellen"
+        $btnReset.AutoSize = $true
+        $btnReset.Height = 36
         $btnReset.BackColor = [System.Drawing.Color]::FromArgb(100, 110, 120)
         $btnReset.ForeColor = [System.Drawing.Color]::White
         $btnReset.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -505,13 +534,12 @@ function Show-RuleEditorDialog {
 
         $btnClose = New-Object System.Windows.Forms.Button
         $btnClose.Text = "Uebernehmen & Schliessen"
-        $btnClose.Location = New-Object System.Drawing.Point(740, 10)
-        $btnClose.Size = New-Object System.Drawing.Size(180, 30)
-        $btnClose.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        $btnClose.AutoSize = $true
+        $btnClose.Height = 36
         $btnClose.BackColor = [System.Drawing.Color]::FromArgb(16, 124, 65)
         $btnClose.ForeColor = [System.Drawing.Color]::White
         $btnClose.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $btnClose.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $btnClose.Font = $script:UITheme.BoldFont
         $pnlBottom.Controls.Add($btnClose)
 
         $refreshGridAction = {
@@ -543,6 +571,11 @@ function Show-RuleEditorDialog {
                 return
             }
 
+            try { [void][regex]::new($m) } catch {
+                [System.Windows.Forms.MessageBox]::Show("Ungueltiges Regex-Suchmuster:`r`n$($_.Exception.Message)", "Regex-Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+                return
+            }
+
             $existing = $script:ActiveRules | Where-Object { $_.Kennung -eq $k }
             if ($existing) {
                 $existing.Suchmuster   = $m
@@ -558,8 +591,29 @@ function Show-RuleEditorDialog {
                     LevelDetails  = $det
                 })
             }
+            Save-ClassificationRulesToFile
             & $refreshGridAction
             if ($null -ne $OnRulesUpdated) { & $OnRulesUpdated }
+        })
+
+        $btnAutoSuggest.Add_Click({
+            $suggested = Get-AutoSuggestedRules -GroupsList $CurrentGroups
+            if ($suggested.Count -eq 0) {
+                [System.Windows.Forms.MessageBox]::Show("Keine neuen wiederkehrenden Gruppen-Muster gefunden oder es wurden noch keine Gruppen geladen.", "Auto-Suggest", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                return
+            }
+
+            $msg = "Folgende $($suggested.Count) neue Regel-Muster wurden aus den Gruppen erkannt:`r`n`r`n"
+            foreach ($s in $suggested) { $msg += "- Kennung '$($s.Kennung)': Muster '$($s.Suchmuster)' -> Rolle '$($s.RollenName)'`r`n" }
+            $msg += "`r`nMoechten Sie diese Regeln jetzt automatisch uebernehmen und abspeichern?"
+
+            $diag = [System.Windows.Forms.MessageBox]::Show($msg, "Vorschlaege uebernehmen", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+            if ($diag -eq [System.Windows.Forms.DialogResult]::Yes) {
+                foreach ($s in $suggested) { $script:ActiveRules.Add($s) }
+                Save-ClassificationRulesToFile
+                & $refreshGridAction
+                if ($null -ne $OnRulesUpdated) { & $OnRulesUpdated }
+            }
         })
 
         $btnDelete.Add_Click({
@@ -567,6 +621,7 @@ function Show-RuleEditorDialog {
                 $sel = $gridRules.SelectedRows[0].DataBoundItem
                 if ($sel) {
                     [void]$script:ActiveRules.Remove($sel)
+                    Save-ClassificationRulesToFile
                     & $refreshGridAction
                     if ($null -ne $OnRulesUpdated) { & $OnRulesUpdated }
                 }
@@ -578,12 +633,14 @@ function Show-RuleEditorDialog {
             if ($diag -eq [System.Windows.Forms.DialogResult]::Yes) {
                 $script:ActiveRules.Clear()
                 foreach ($r in $script:DefaultRules) { $script:ActiveRules.Add($r) }
+                Save-ClassificationRulesToFile
                 & $refreshGridAction
                 if ($null -ne $OnRulesUpdated) { & $OnRulesUpdated }
             }
         })
 
         $btnClose.Add_Click({
+            Save-ClassificationRulesToFile
             if ($null -ne $OnRulesUpdated) { & $OnRulesUpdated }
             $ruleForm.Close()
         })
@@ -592,234 +649,6 @@ function Show-RuleEditorDialog {
         [void]$ruleForm.ShowDialog()
     } finally {
         $ruleForm.Dispose()
-    }
-}
-
-# ------------------------------------------------------------------------------
-# POPUP-GUI: DETAIL-DASHBOARD
-# ------------------------------------------------------------------------------
-function Show-GroupDetailDialog {
-    param(
-        [PSCustomObject]$GroupObj,
-        [System.Collections.Generic.List[PSCustomObject]]$MembersList,
-        [string]$DomainName
-    )
-
-    $detailForm = New-Object System.Windows.Forms.Form
-    $detailForm.Text = "Gruppen-Detailansicht: $($GroupObj.Gruppenname)"
-    $detailForm.Size = New-Object System.Drawing.Size(1220, 780)
-    $detailForm.MinimumSize = New-Object System.Drawing.Size(1000, 620)
-    $detailForm.StartPosition = "CenterParent"
-    $detailForm.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $detailForm.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
-
-    try {
-        $topInfoPanel = New-Object System.Windows.Forms.Panel
-        $topInfoPanel.Dock = [System.Windows.Forms.DockStyle]::Top
-        $topInfoPanel.Height = 195
-        $topInfoPanel.BackColor = [System.Drawing.Color]::White
-        $topInfoPanel.Padding = New-Object System.Windows.Forms.Padding(15, 10, 15, 10)
-        $detailForm.Controls.Add($topInfoPanel)
-
-        $grpHeader = New-Object System.Windows.Forms.GroupBox
-        $grpHeader.Text = "Gruppen-Stammdaten, Klassifizierung & Computer-Gegenpruefung"
-        $grpHeader.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $grpHeader.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $topInfoPanel.Controls.Add($grpHeader)
-
-        $tableLayout = New-Object System.Windows.Forms.TableLayoutPanel
-        $tableLayout.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $tableLayout.ColumnCount = 4
-        $tableLayout.RowCount = 5
-        $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 18)))
-        $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 32)))
-        $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 18)))
-        $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 32)))
-        $grpHeader.Controls.Add($tableLayout)
-
-        function Add-InfoField {
-            param([string]$Title, [string]$Value, [int]$Col, [int]$Row, [System.Drawing.Color]$ValColor = [System.Drawing.Color]::Black)
-            $lblT = New-Object System.Windows.Forms.Label
-            $lblT.Text = "$($Title):"
-            $lblT.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-            $lblT.ForeColor = [System.Drawing.Color]::FromArgb(60, 70, 80)
-            $lblT.Dock = [System.Windows.Forms.DockStyle]::Fill
-            $lblT.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-            $tableLayout.Controls.Add($lblT, $Col, $Row)
-
-            $lblV = New-Object System.Windows.Forms.Label
-            $lblV.Text = if ([string]::IsNullOrWhiteSpace($Value)) { "-" } else { $Value }
-            $lblV.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Regular)
-            $lblV.ForeColor = $ValColor
-            $lblV.Dock = [System.Windows.Forms.DockStyle]::Fill
-            $lblV.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-            $tableLayout.Controls.Add($lblV, ($Col + 1), $Row)
-        }
-
-        $gCat = $GroupObj."Gruppen-`r`nKategorie"
-        $gScope = $GroupObj."Gruppen-`r`nBereich"
-        $gRole = $GroupObj."Funktion /`r`nRolle"
-        $compObj = $GroupObj."Computer-`r`nObjekt"
-        $compSt = $GroupObj."Computer-`r`nStatus"
-        $created = $GroupObj."Erstellt`r`nam"
-        $changed = $GroupObj."Geändert`r`nam"
-        $nestedFlag = $GroupObj."Verschachtelt`r`n(Ja/Nein)"
-        $nestingDetail = $GroupObj."Untergruppen`r`n(Enthält/Ist)"
-
-        Add-InfoField -Title "Gruppenname" -Value $GroupObj.Gruppenname -Col 0 -Row 0
-        Add-InfoField -Title "Status / Typ" -Value "$($GroupObj.'Gruppen-Status') ($gCat - $gScope)" -Col 2 -Row 0
-
-        $roleColor = if ($gRole -eq "Built-In") { [System.Drawing.Color]::FromArgb(90, 30, 150) } else { [System.Drawing.Color]::FromArgb(0, 70, 150) }
-        Add-InfoField -Title "Funktion / Rolle" -Value $gRole -Col 0 -Row 1 -ValColor $roleColor
-        
-        $compColor = if ($compSt -like "*Nicht vorhanden*") { [System.Drawing.Color]::DarkRed }
-                     elseif ($compSt -like "*Aktiv*") { [System.Drawing.Color]::DarkGreen }
-                     elseif ($compSt -like "*Inaktiv*") { [System.Drawing.Color]::DarkOrange }
-                     else { [System.Drawing.Color]::Black }
-        $compVal = if ($compObj -ne "-") { "$compObj [$compSt]" } else { "-" }
-        Add-InfoField -Title "Computer-Objekt" -Value $compVal -Col 2 -Row 1 -ValColor $compColor
-
-        $memberStats = "Gesamt: $($GroupObj.'Mitglieder`r`nGesamt') | User: $($GroupObj.'Anz.`r`nUser') | PC: $($GroupObj.'Anz.`r`nComputer') | Untergruppen: $($GroupObj.'Anz.`r`nGruppen')"
-        Add-InfoField -Title "Mitgliederzaehlung" -Value $memberStats -Col 0 -Row 2
-        Add-InfoField -Title "Verschachtelung" -Value "$nestedFlag ($nestingDetail)" -Col 2 -Row 2
-
-        Add-InfoField -Title "Erstellt am" -Value $created -Col 0 -Row 3
-        Add-InfoField -Title "Geaendert am" -Value $changed -Col 2 -Row 3
-
-        Add-InfoField -Title "Beschreibung" -Value $GroupObj.Beschreibung -Col 0 -Row 4
-        Add-InfoField -Title "DistinguishedName" -Value $GroupObj.DistinguishedName -Col 2 -Row 4
-
-        $bottomPanel = New-Object System.Windows.Forms.Panel
-        $bottomPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $bottomPanel.Padding = New-Object System.Windows.Forms.Padding(15, 5, 15, 15)
-        $detailForm.Controls.Add($bottomPanel)
-        $bottomPanel.BringToFront()
-
-        $grpTable = New-Object System.Windows.Forms.GroupBox
-        $grpTable.Text = "Enthaltene Gruppenmitglieder (Objekt-Details)"
-        $grpTable.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $grpTable.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $bottomPanel.Controls.Add($grpTable)
-
-        $pnlSubFilter = New-Object System.Windows.Forms.Panel
-        $pnlSubFilter.Dock = [System.Windows.Forms.DockStyle]::Top
-        $pnlSubFilter.Height = 36
-        $pnlSubFilter.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 252)
-        $grpTable.Controls.Add($pnlSubFilter)
-
-        $lblSubSearch = New-Object System.Windows.Forms.Label
-        $lblSubSearch.Text = "In Mitgliedern suchen:"
-        $lblSubSearch.Location = New-Object System.Drawing.Point(8, 9)
-        $lblSubSearch.AutoSize = $true
-        $pnlSubFilter.Controls.Add($lblSubSearch)
-
-        $txtSubSearch = New-Object System.Windows.Forms.TextBox
-        $txtSubSearch.Location = New-Object System.Drawing.Point(155, 6)
-        $txtSubSearch.Size = New-Object System.Drawing.Size(220, 23)
-        $pnlSubFilter.Controls.Add($txtSubSearch)
-
-        $btnSubExport = New-Object System.Windows.Forms.Button
-        $btnSubExport.Text = "CSV Export dieser Gruppe"
-        $btnSubExport.Location = New-Object System.Drawing.Point(920, 4)
-        $btnSubExport.Size = New-Object System.Drawing.Size(200, 27)
-        $btnSubExport.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-        $btnSubExport.BackColor = [System.Drawing.Color]::FromArgb(16, 124, 65)
-        $btnSubExport.ForeColor = [System.Drawing.Color]::White
-        $btnSubExport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $btnSubExport.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-        $pnlSubFilter.Controls.Add($btnSubExport)
-
-        $gridSubMembers = New-Object System.Windows.Forms.DataGridView
-        $gridSubMembers.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $gridSubMembers.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::DisplayedCells
-        Apply-StandardGridTheme $gridSubMembers
-        $grpTable.Controls.Add($gridSubMembers)
-        $gridSubMembers.BringToFront()
-
-        Enable-UniversalGridSorting -Grid $gridSubMembers
-
-        $gridSubMembers.Add_RowPrePaint({
-            param($s, $e)
-            if ($e.RowIndex -ge 0 -and $e.RowIndex -lt $gridSubMembers.Rows.Count) {
-                $row = $gridSubMembers.Rows[$e.RowIndex]
-                $st = [string]$row.Cells["Status"].Value
-                $typ = [string]$row.Cells["Typ"].Value
-                if ($st -like "*Inaktiv*") {
-                    $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(180, 0, 0)
-                } elseif ($typ -like "*Gruppe*") {
-                    $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 150)
-                }
-            }
-        })
-
-        $filterSubAction = {
-            $filterVal = $txtSubSearch.Text.Trim()
-            if (-not $MembersList -or $MembersList.Count -eq 0) {
-                $gridSubMembers.DataSource = $null
-                return
-            }
-
-            $res = $MembersList | Where-Object {
-                if ([string]::IsNullOrWhiteSpace($filterVal)) { return $true }
-                $_.Name -like "*$filterVal*" -or `
-                $_.SamAccountName -like "*$filterVal*" -or `
-                $_.Beschreibung -like "*$filterVal*" -or `
-                $_.Typ -like "*$filterVal*" -or `
-                $_."OU / Pfad" -like "*$filterVal*"
-            }
-
-            $gridSubMembers.SuspendLayout()
-            $gridSubMembers.DataSource = [System.Collections.ArrayList]::new(@($res))
-            $gridSubMembers.ResumeLayout()
-        }
-
-        $txtSubSearch.Add_TextChanged($filterSubAction)
-
-        $btnSubExport.Add_Click({
-            if (-not $MembersList -or $MembersList.Count -eq 0) {
-                [System.Windows.Forms.MessageBox]::Show("Diese Gruppe besitzt keine Mitglieder zum Exportieren.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-                return
-            }
-
-            $sfd = New-Object System.Windows.Forms.SaveFileDialog
-            $sfd.Filter = "CSV-Datei (*.csv)|*.csv"
-            $sfd.FileName = "AD_Gruppe_$($GroupObj.Gruppenname)_$(Get-Date -Format 'yyyyMMdd_HHmm').csv"
-
-            if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-                try {
-                    $curDate = Get-Date -Format "yyyyMMdd"
-                    $curTime = Get-Date -Format "HH:mm:ss"
-                    $rows = foreach ($m in $MembersList) {
-                        [PSCustomObject]@{
-                            "Scan Datum"                      = $curDate
-                            "Scan Uhrzeit"                    = $curTime
-                            "Domain Name"                     = $DomainName
-                            "Gruppen Name"                    = $GroupObj.Gruppenname
-                            "Funktion / Rolle"                = $gRole
-                            "Berechtigungs-Level"             = $GroupObj."Berechtigungs-`r`nLevel"
-                            "Computer-Objekt"                 = $compObj
-                            "Computer-Status"                 = $compSt
-                            "Typ"                             = $m.Typ
-                            "Mitgliedsname"                   = $m.Name
-                            "User (SAM)"                      = $m.SamAccountName
-                            "Mitglied Status (Aktiv/Inaktiv)" = $m.Status
-                            "Beschreibung"                    = $m.Beschreibung
-                            "OU / Pfad"                       = $m."OU / Pfad"
-                            "DistinguishedName"               = $m.DN
-                        }
-                    }
-                    $rows | Export-Csv -Path $sfd.FileName -Delimiter ';' -NoTypeInformation -Encoding UTF8
-                    [System.Windows.Forms.MessageBox]::Show("Export erfolgreich erstellt!`r`n$($sfd.FileName)", "Export", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-                } catch {
-                    [System.Windows.Forms.MessageBox]::Show("Fehler beim Exportieren: $($_.Exception.Message)", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
-                }
-            }
-        })
-
-        & $filterSubAction
-        [void]$detailForm.ShowDialog()
-    } finally {
-        $detailForm.Dispose()
     }
 }
 
@@ -846,177 +675,193 @@ function Show-ADGroupAnalysisModule {
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Tool 17: AD Gruppen- & Mitgliedschafts-Analyse - Domaene: $domainName"
-    $form.Size = New-Object System.Drawing.Size(1820, 970)
-    $form.MinimumSize = New-Object System.Drawing.Size(1280, 750)
+    $form.Size = New-Object System.Drawing.Size(1850, 990)
+    $form.MinimumSize = New-Object System.Drawing.Size(1280, 780)
     $form.StartPosition = "CenterScreen"
-    $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $form.Font = $script:UITheme.BaseFont
     $form.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
     try {
         # TOP PANEL
         $topPanel = New-Object System.Windows.Forms.Panel
         $topPanel.Dock = [System.Windows.Forms.DockStyle]::Top
-        $topPanel.Height = 100
+        $topPanel.Height = 115
         $topPanel.BackColor = [System.Drawing.Color]::FromArgb(240, 243, 246)
         $form.Controls.Add($topPanel)
 
-        # ZEILE 1
+        # FLOWPANEL ZEILE 1
+        $flowRow1 = New-Object System.Windows.Forms.FlowLayoutPanel
+        $flowRow1.Location = New-Object System.Drawing.Point(12, 10)
+        $flowRow1.Size = New-Object System.Drawing.Size(1810, 42)
+        $flowRow1.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+        $flowRow1.WrapContents = $false
+        $topPanel.Controls.Add($flowRow1)
+
         $lblSearch = New-Object System.Windows.Forms.Label
         $lblSearch.Text = "Gruppen-Filter (*):"
-        $lblSearch.Location = New-Object System.Drawing.Point(15, 16)
         $lblSearch.AutoSize = $true
-        $lblSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $topPanel.Controls.Add($lblSearch)
+        $lblSearch.Font = $script:UITheme.BoldFont
+        $lblSearch.Margin = New-Object System.Windows.Forms.Padding(0, 6, 8, 0)
+        $flowRow1.Controls.Add($lblSearch)
 
         $txtGroupSearch = New-Object System.Windows.Forms.TextBox
-        $txtGroupSearch.Location = New-Object System.Drawing.Point(135, 13)
-        $txtGroupSearch.Size = New-Object System.Drawing.Size(150, 25)
+        $txtGroupSearch.Size = New-Object System.Drawing.Size(180, 27)
         $txtGroupSearch.Text = "*"
-        $topPanel.Controls.Add($txtGroupSearch)
+        $txtGroupSearch.Font = $script:UITheme.BaseFont
+        $txtGroupSearch.Margin = New-Object System.Windows.Forms.Padding(0, 2, 10, 0)
+        $flowRow1.Controls.Add($txtGroupSearch)
 
         $btnStartLoad = New-Object System.Windows.Forms.Button
         $btnStartLoad.Text = "Gruppen laden"
-        $btnStartLoad.Location = New-Object System.Drawing.Point(295, 10)
-        $btnStartLoad.Size = New-Object System.Drawing.Size(115, 30)
+        $btnStartLoad.AutoSize = $true
+        $btnStartLoad.Height = 32
         $btnStartLoad.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
         $btnStartLoad.ForeColor = [System.Drawing.Color]::White
         $btnStartLoad.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $btnStartLoad.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $topPanel.Controls.Add($btnStartLoad)
+        $btnStartLoad.Font = $script:UITheme.BoldFont
+        $btnStartLoad.Margin = New-Object System.Windows.Forms.Padding(0, 0, 10, 0)
+        $flowRow1.Controls.Add($btnStartLoad)
 
         $btnRuleEditor = New-Object System.Windows.Forms.Button
         $btnRuleEditor.Text = "Klassifizierungs-Regeln"
-        $btnRuleEditor.Location = New-Object System.Drawing.Point(420, 10)
-        $btnRuleEditor.Size = New-Object System.Drawing.Size(185, 30)
+        $btnRuleEditor.AutoSize = $true
+        $btnRuleEditor.Height = 32
         $btnRuleEditor.BackColor = [System.Drawing.Color]::FromArgb(80, 70, 140)
         $btnRuleEditor.ForeColor = [System.Drawing.Color]::White
         $btnRuleEditor.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $btnRuleEditor.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $topPanel.Controls.Add($btnRuleEditor)
+        $btnRuleEditor.Font = $script:UITheme.BoldFont
+        $btnRuleEditor.Margin = New-Object System.Windows.Forms.Padding(0, 0, 15, 0)
+        $flowRow1.Controls.Add($btnRuleEditor)
 
         $chkEmptyOnly = New-Object System.Windows.Forms.CheckBox
         $chkEmptyOnly.Text = "Nur leere (0)"
-        $chkEmptyOnly.Location = New-Object System.Drawing.Point(620, 15)
         $chkEmptyOnly.AutoSize = $true
-        $chkEmptyOnly.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $chkEmptyOnly.Font = $script:UITheme.BoldFont
         $chkEmptyOnly.ForeColor = [System.Drawing.Color]::FromArgb(180, 30, 30)
-        $topPanel.Controls.Add($chkEmptyOnly)
+        $chkEmptyOnly.Margin = New-Object System.Windows.Forms.Padding(0, 5, 15, 0)
+        $flowRow1.Controls.Add($chkEmptyOnly)
 
         $chkNestedOnly = New-Object System.Windows.Forms.CheckBox
         $chkNestedOnly.Text = "Nur Verschachtelte"
-        $chkNestedOnly.Location = New-Object System.Drawing.Point(730, 15)
         $chkNestedOnly.AutoSize = $true
-        $chkNestedOnly.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $chkNestedOnly.Font = $script:UITheme.BoldFont
         $chkNestedOnly.ForeColor = [System.Drawing.Color]::FromArgb(0, 60, 140)
-        $topPanel.Controls.Add($chkNestedOnly)
+        $chkNestedOnly.Margin = New-Object System.Windows.Forms.Padding(0, 5, 25, 0)
+        $flowRow1.Controls.Add($chkNestedOnly)
 
         $btnExportGroups = New-Object System.Windows.Forms.Button
         $btnExportGroups.Text = "CSV Gruppen-Export"
-        $btnExportGroups.Location = New-Object System.Drawing.Point(1210, 10)
-        $btnExportGroups.Size = New-Object System.Drawing.Size(160, 30)
-        $btnExportGroups.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        $btnExportGroups.AutoSize = $true
+        $btnExportGroups.Height = 32
         $btnExportGroups.BackColor = [System.Drawing.Color]::FromArgb(16, 124, 65)
         $btnExportGroups.ForeColor = [System.Drawing.Color]::White
         $btnExportGroups.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $btnExportGroups.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $topPanel.Controls.Add($btnExportGroups)
+        $btnExportGroups.Font = $script:UITheme.BoldFont
+        $btnExportGroups.Margin = New-Object System.Windows.Forms.Padding(0, 0, 10, 0)
+        $flowRow1.Controls.Add($btnExportGroups)
 
         $btnExportMembers = New-Object System.Windows.Forms.Button
         $btnExportMembers.Text = "CSV Mitglieder-Export"
-        $btnExportMembers.Location = New-Object System.Drawing.Point(1380, 10)
-        $btnExportMembers.Size = New-Object System.Drawing.Size(175, 30)
-        $btnExportMembers.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        $btnExportMembers.AutoSize = $true
+        $btnExportMembers.Height = 32
         $btnExportMembers.BackColor = [System.Drawing.Color]::FromArgb(40, 100, 170)
         $btnExportMembers.ForeColor = [System.Drawing.Color]::White
         $btnExportMembers.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $btnExportMembers.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $topPanel.Controls.Add($btnExportMembers)
+        $btnExportMembers.Font = $script:UITheme.BoldFont
+        $flowRow1.Controls.Add($btnExportMembers)
 
-        # ZEILE 2: MULTI-FILTERLEISTE
-        $pnlFilters = New-Object System.Windows.Forms.Panel
-        $pnlFilters.Location = New-Object System.Drawing.Point(15, 52)
-        $pnlFilters.Size = New-Object System.Drawing.Size(1540, 38)
-        $topPanel.Controls.Add($pnlFilters)
+        # FLOWPANEL ZEILE 2
+        $flowRow2 = New-Object System.Windows.Forms.FlowLayoutPanel
+        $flowRow2.Location = New-Object System.Drawing.Point(12, 60)
+        $flowRow2.Size = New-Object System.Drawing.Size(1810, 45)
+        $flowRow2.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+        $flowRow2.WrapContents = $false
+        $topPanel.Controls.Add($flowRow2)
 
         $lblFRole = New-Object System.Windows.Forms.Label
         $lblFRole.Text = "Funktion/Rolle:"
-        $lblFRole.Location = New-Object System.Drawing.Point(0, 9)
         $lblFRole.AutoSize = $true
-        $lblFRole.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-        $pnlFilters.Controls.Add($lblFRole)
+        $lblFRole.Font = $script:UITheme.BoldFont
+        $lblFRole.Margin = New-Object System.Windows.Forms.Padding(0, 6, 6, 0)
+        $flowRow2.Controls.Add($lblFRole)
 
         $cmbFilterRole = New-Object System.Windows.Forms.ComboBox
-        $cmbFilterRole.Location = New-Object System.Drawing.Point(95, 6)
-        $cmbFilterRole.Size = New-Object System.Drawing.Size(185, 23)
+        $cmbFilterRole.Size = New-Object System.Drawing.Size(200, 27)
+        $cmbFilterRole.Font = $script:UITheme.BaseFont
         $cmbFilterRole.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
         [void]$cmbFilterRole.Items.Add("Alle Rollen")
         $cmbFilterRole.SelectedIndex = 0
-        $pnlFilters.Controls.Add($cmbFilterRole)
+        $cmbFilterRole.Margin = New-Object System.Windows.Forms.Padding(0, 2, 20, 0)
+        $flowRow2.Controls.Add($cmbFilterRole)
 
         $lblFLevel = New-Object System.Windows.Forms.Label
         $lblFLevel.Text = "Berechtigungs-Level:"
-        $lblFLevel.Location = New-Object System.Drawing.Point(295, 9)
         $lblFLevel.AutoSize = $true
-        $lblFLevel.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-        $pnlFilters.Controls.Add($lblFLevel)
+        $lblFLevel.Font = $script:UITheme.BoldFont
+        $lblFLevel.Margin = New-Object System.Windows.Forms.Padding(0, 6, 6, 0)
+        $flowRow2.Controls.Add($lblFLevel)
 
         $cmbFilterLevel = New-Object System.Windows.Forms.ComboBox
-        $cmbFilterLevel.Location = New-Object System.Drawing.Point(420, 6)
-        $cmbFilterLevel.Size = New-Object System.Drawing.Size(180, 23)
+        $cmbFilterLevel.Size = New-Object System.Drawing.Size(190, 27)
+        $cmbFilterLevel.Font = $script:UITheme.BaseFont
         $cmbFilterLevel.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
         [void]$cmbFilterLevel.Items.Add("Alle Level")
         $cmbFilterLevel.SelectedIndex = 0
-        $pnlFilters.Controls.Add($cmbFilterLevel)
+        $cmbFilterLevel.Margin = New-Object System.Windows.Forms.Padding(0, 2, 20, 0)
+        $flowRow2.Controls.Add($cmbFilterLevel)
 
         $lblFCat = New-Object System.Windows.Forms.Label
         $lblFCat.Text = "Kategorie:"
-        $lblFCat.Location = New-Object System.Drawing.Point(615, 9)
         $lblFCat.AutoSize = $true
-        $lblFCat.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-        $pnlFilters.Controls.Add($lblFCat)
+        $lblFCat.Font = $script:UITheme.BoldFont
+        $lblFCat.Margin = New-Object System.Windows.Forms.Padding(0, 6, 6, 0)
+        $flowRow2.Controls.Add($lblFCat)
 
         $cmbFilterCat = New-Object System.Windows.Forms.ComboBox
-        $cmbFilterCat.Location = New-Object System.Drawing.Point(685, 6)
-        $cmbFilterCat.Size = New-Object System.Drawing.Size(140, 23)
+        $cmbFilterCat.Size = New-Object System.Drawing.Size(150, 27)
+        $cmbFilterCat.Font = $script:UITheme.BaseFont
         $cmbFilterCat.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
         [void]$cmbFilterCat.Items.AddRange(@("Alle Kategorien", "Sicherheit", "Verteilung"))
         $cmbFilterCat.SelectedIndex = 0
-        $pnlFilters.Controls.Add($cmbFilterCat)
+        $cmbFilterCat.Margin = New-Object System.Windows.Forms.Padding(0, 2, 20, 0)
+        $flowRow2.Controls.Add($cmbFilterCat)
 
         $lblFScope = New-Object System.Windows.Forms.Label
         $lblFScope.Text = "Bereich:"
-        $lblFScope.Location = New-Object System.Drawing.Point(840, 9)
         $lblFScope.AutoSize = $true
-        $lblFScope.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
-        $pnlFilters.Controls.Add($lblFScope)
+        $lblFScope.Font = $script:UITheme.BoldFont
+        $lblFScope.Margin = New-Object System.Windows.Forms.Padding(0, 6, 6, 0)
+        $flowRow2.Controls.Add($lblFScope)
 
         $cmbFilterScope = New-Object System.Windows.Forms.ComboBox
-        $cmbFilterScope.Location = New-Object System.Drawing.Point(895, 6)
-        $cmbFilterScope.Size = New-Object System.Drawing.Size(150, 23)
+        $cmbFilterScope.Size = New-Object System.Drawing.Size(160, 27)
+        $cmbFilterScope.Font = $script:UITheme.BaseFont
         $cmbFilterScope.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
         [void]$cmbFilterScope.Items.AddRange(@("Alle Bereiche", "Global", "Domaenenlokal", "Universal", "Lokal"))
         $cmbFilterScope.SelectedIndex = 0
-        $pnlFilters.Controls.Add($cmbFilterScope)
+        $cmbFilterScope.Margin = New-Object System.Windows.Forms.Padding(0, 2, 20, 0)
+        $flowRow2.Controls.Add($cmbFilterScope)
 
         $btnResetDropdowns = New-Object System.Windows.Forms.Button
         $btnResetDropdowns.Text = "Filter leeren"
-        $btnResetDropdowns.Location = New-Object System.Drawing.Point(1060, 5)
-        $btnResetDropdowns.Size = New-Object System.Drawing.Size(100, 26)
+        $btnResetDropdowns.AutoSize = $true
+        $btnResetDropdowns.Height = 29
         $btnResetDropdowns.BackColor = [System.Drawing.Color]::FromArgb(230, 235, 240)
         $btnResetDropdowns.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $pnlFilters.Controls.Add($btnResetDropdowns)
+        $btnResetDropdowns.Font = $script:UITheme.BaseFont
+        $flowRow2.Controls.Add($btnResetDropdowns)
 
         # PROGRESS & STATUS
         $pnlStatus = New-Object System.Windows.Forms.Panel
         $pnlStatus.Dock = [System.Windows.Forms.DockStyle]::Top
-        $pnlStatus.Height = 48
+        $pnlStatus.Height = 44
         $pnlStatus.BackColor = [System.Drawing.Color]::FromArgb(235, 240, 248)
         $form.Controls.Add($pnlStatus)
         $topPanel.SendToBack()
 
         $progressBar = New-Object System.Windows.Forms.ProgressBar
         $progressBar.Dock = [System.Windows.Forms.DockStyle]::Top
-        $progressBar.Height = 14
+        $progressBar.Height = 12
         $progressBar.Visible = $false
         $pnlStatus.Controls.Add($progressBar)
 
@@ -1025,37 +870,51 @@ function Show-ADGroupAnalysisModule {
         $lblStatus.Dock = [System.Windows.Forms.DockStyle]::Fill
         $lblStatus.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
         $lblStatus.Padding = New-Object System.Windows.Forms.Padding(15, 0, 0, 0)
-        $lblStatus.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+        $lblStatus.Font = $script:UITheme.BoldFont
         $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(20, 60, 120)
         $pnlStatus.Controls.Add($lblStatus)
         $progressBar.SendToBack()
 
-        # ----------------------------------------------------------------------
         # UNTERE BEFEHLSLEISTE
-        # ----------------------------------------------------------------------
         $pnlBottomActions = New-Object System.Windows.Forms.Panel
         $pnlBottomActions.Dock = [System.Windows.Forms.DockStyle]::Bottom
-        $pnlBottomActions.Height = 125
+        $pnlBottomActions.Height = 155
         $pnlBottomActions.BackColor = [System.Drawing.Color]::FromArgb(240, 243, 246)
-        $pnlBottomActions.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
+        $pnlBottomActions.Padding = New-Object System.Windows.Forms.Padding(12, 6, 12, 6)
         $form.Controls.Add($pnlBottomActions)
         $pnlBottomActions.BringToFront()
 
         $grpActions = New-Object System.Windows.Forms.GroupBox
-        $grpActions.Text = "PowerShell Befehls-Steuerung & Umschaltung"
+        $grpActions.Text = "PowerShell Befehls-Steuerung && Umschaltung"
         $grpActions.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $grpActions.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+        $grpActions.Font = $script:UITheme.BoldFont
         $pnlBottomActions.Controls.Add($grpActions)
+
+        $tblBottom = New-Object System.Windows.Forms.TableLayoutPanel
+        $tblBottom.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $tblBottom.ColumnCount = 2
+        $tblBottom.RowCount = 2
+        $tblBottom.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 72)))
+        $tblBottom.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 28)))
+        $tblBottom.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 36)))
+        $tblBottom.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+        $grpActions.Controls.Add($tblBottom)
+
+        $flowCmdTop = New-Object System.Windows.Forms.FlowLayoutPanel
+        $flowCmdTop.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $flowCmdTop.Margin = New-Object System.Windows.Forms.Padding(0)
+        $tblBottom.Controls.Add($flowCmdTop, 0, 0)
 
         $lblActionSelect = New-Object System.Windows.Forms.Label
         $lblActionSelect.Text = "Aktion:"
-        $lblActionSelect.Location = New-Object System.Drawing.Point(10, 22)
         $lblActionSelect.AutoSize = $true
-        $grpActions.Controls.Add($lblActionSelect)
+        $lblActionSelect.Font = $script:UITheme.BoldFont
+        $lblActionSelect.Margin = New-Object System.Windows.Forms.Padding(0, 4, 8, 0)
+        $flowCmdTop.Controls.Add($lblActionSelect)
 
         $cmbActionType = New-Object System.Windows.Forms.ComboBox
-        $cmbActionType.Location = New-Object System.Drawing.Point(60, 19)
-        $cmbActionType.Size = New-Object System.Drawing.Size(320, 23)
+        $cmbActionType.Size = New-Object System.Drawing.Size(390, 27)
+        $cmbActionType.Font = $script:UITheme.BaseFont
         $cmbActionType.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
         [void]$cmbActionType.Items.AddRange(@(
             "Gruppe(n) loeschen (Remove-ADGroup)",
@@ -1067,42 +926,52 @@ function Show-ADGroupAnalysisModule {
             "Gruppe(n) abfragen (Get-ADGroup)"
         ))
         $cmbActionType.SelectedIndex = 0
-        $grpActions.Controls.Add($cmbActionType)
+        $flowCmdTop.Controls.Add($cmbActionType)
 
         $txtPSCommand = New-Object System.Windows.Forms.TextBox
-        $txtPSCommand.Location = New-Object System.Drawing.Point(10, 48)
-        $txtPSCommand.Size = New-Object System.Drawing.Size(830, 62)
+        $txtPSCommand.Dock = [System.Windows.Forms.DockStyle]::Fill
         $txtPSCommand.Multiline = $true
         $txtPSCommand.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
         $txtPSCommand.ReadOnly = $true
         $txtPSCommand.BackColor = [System.Drawing.Color]::White
-        $txtPSCommand.Font = New-Object System.Drawing.Font("Consolas", 8.5)
-        $grpActions.Controls.Add($txtPSCommand)
+        $txtPSCommand.Font = New-Object System.Drawing.Font("Consolas", 9.5)
+        $tblBottom.Controls.Add($txtPSCommand, 0, 1)
+
+        $flowCmdBtns = New-Object System.Windows.Forms.FlowLayoutPanel
+        $flowCmdBtns.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $flowCmdBtns.Margin = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
+        $tblBottom.Controls.Add($flowCmdBtns, 1, 1)
+        $tblBottom.SetRowSpan($flowCmdBtns, 2)
 
         $btnCopyCmd = New-Object System.Windows.Forms.Button
         $btnCopyCmd.Text = "Befehl(e) kopieren"
-        $btnCopyCmd.Location = New-Object System.Drawing.Point(855, 17)
-        $btnCopyCmd.Size = New-Object System.Drawing.Size(160, 27)
+        $btnCopyCmd.AutoSize = $true
+        $btnCopyCmd.Height = 34
         $btnCopyCmd.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $grpActions.Controls.Add($btnCopyCmd)
+        $btnCopyCmd.Font = $script:UITheme.BoldFont
+        $btnCopyCmd.Margin = New-Object System.Windows.Forms.Padding(0, 0, 10, 8)
+        $flowCmdBtns.Controls.Add($btnCopyCmd)
 
         $btnExecuteCmd = New-Object System.Windows.Forms.Button
         $btnExecuteCmd.Text = "Befehl(e) ausfuehren"
-        $btnExecuteCmd.Location = New-Object System.Drawing.Point(855, 48)
-        $btnExecuteCmd.Size = New-Object System.Drawing.Size(160, 27)
+        $btnExecuteCmd.AutoSize = $true
+        $btnExecuteCmd.Height = 34
         $btnExecuteCmd.BackColor = [System.Drawing.Color]::FromArgb(190, 40, 40)
         $btnExecuteCmd.ForeColor = [System.Drawing.Color]::White
         $btnExecuteCmd.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $grpActions.Controls.Add($btnExecuteCmd)
+        $btnExecuteCmd.Font = $script:UITheme.BoldFont
+        $btnExecuteCmd.Margin = New-Object System.Windows.Forms.Padding(0, 0, 10, 8)
+        $flowCmdBtns.Controls.Add($btnExecuteCmd)
 
         $btnSetDesc = New-Object System.Windows.Forms.Button
         $btnSetDesc.Text = "Beschreibung aendern"
-        $btnSetDesc.Location = New-Object System.Drawing.Point(1025, 17)
-        $btnSetDesc.Size = New-Object System.Drawing.Size(160, 27)
+        $btnSetDesc.AutoSize = $true
+        $btnSetDesc.Height = 34
         $btnSetDesc.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
         $btnSetDesc.ForeColor = [System.Drawing.Color]::White
         $btnSetDesc.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $grpActions.Controls.Add($btnSetDesc)
+        $btnSetDesc.Font = $script:UITheme.BoldFont
+        $flowCmdBtns.Controls.Add($btnSetDesc)
 
         # SPLIT CONTAINER
         $splitContainer = New-Object System.Windows.Forms.SplitContainer
@@ -1114,7 +983,7 @@ function Show-ADGroupAnalysisModule {
         $grpBoxLeft = New-Object System.Windows.Forms.GroupBox
         $grpBoxLeft.Text = "AD Gruppen (Klick auf Spalte sortiert | Doppelklick oeffnet Detail-Dashboard)"
         $grpBoxLeft.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $grpBoxLeft.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+        $grpBoxLeft.Font = $script:UITheme.BoldFont
         $splitContainer.Panel1.Controls.Add($grpBoxLeft)
 
         $gridGroups = New-Object System.Windows.Forms.DataGridView
@@ -1126,31 +995,36 @@ function Show-ADGroupAnalysisModule {
         $grpBoxRight = New-Object System.Windows.Forms.GroupBox
         $grpBoxRight.Text = "Gruppenmitglieder (Klick auf Spalte sortiert)"
         $grpBoxRight.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $grpBoxRight.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+        $grpBoxRight.Font = $script:UITheme.BoldFont
         $splitContainer.Panel2.Controls.Add($grpBoxRight)
 
-        $pnlMemberFilter = New-Object System.Windows.Forms.Panel
+        $pnlMemberFilter = New-Object System.Windows.Forms.FlowLayoutPanel
         $pnlMemberFilter.Dock = [System.Windows.Forms.DockStyle]::Top
-        $pnlMemberFilter.Height = 36
+        $pnlMemberFilter.Height = 44
         $pnlMemberFilter.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 252)
+        $pnlMemberFilter.Padding = New-Object System.Windows.Forms.Padding(8, 8, 8, 8)
+        $pnlMemberFilter.WrapContents = $false
         $grpBoxRight.Controls.Add($pnlMemberFilter)
 
         $lblMemberSearch = New-Object System.Windows.Forms.Label
         $lblMemberSearch.Text = "In Mitgliedern filtern:"
-        $lblMemberSearch.Location = New-Object System.Drawing.Point(8, 9)
         $lblMemberSearch.AutoSize = $true
+        $lblMemberSearch.Font = $script:UITheme.BaseFont
+        $lblMemberSearch.Margin = New-Object System.Windows.Forms.Padding(0, 4, 8, 0)
         $pnlMemberFilter.Controls.Add($lblMemberSearch)
 
         $txtMemberSearch = New-Object System.Windows.Forms.TextBox
-        $txtMemberSearch.Location = New-Object System.Drawing.Point(145, 6)
-        $txtMemberSearch.Size = New-Object System.Drawing.Size(180, 23)
+        $txtMemberSearch.Size = New-Object System.Drawing.Size(220, 27)
+        $txtMemberSearch.Font = $script:UITheme.BaseFont
+        $txtMemberSearch.Margin = New-Object System.Windows.Forms.Padding(0, 0, 15, 0)
         $pnlMemberFilter.Controls.Add($txtMemberSearch)
 
         $lblMemberCountsInfo = New-Object System.Windows.Forms.Label
         $lblMemberCountsInfo.Text = "User: 0 | Computer: 0 | Gruppen: 0"
-        $lblMemberCountsInfo.Location = New-Object System.Drawing.Point(340, 9)
         $lblMemberCountsInfo.AutoSize = $true
+        $lblMemberCountsInfo.Font = $script:UITheme.BaseFont
         $lblMemberCountsInfo.ForeColor = [System.Drawing.Color]::FromArgb(50, 70, 90)
+        $lblMemberCountsInfo.Margin = New-Object System.Windows.Forms.Padding(0, 4, 0, 0)
         $pnlMemberFilter.Controls.Add($lblMemberCountsInfo)
 
         $gridMembers = New-Object System.Windows.Forms.DataGridView
@@ -1163,7 +1037,7 @@ function Show-ADGroupAnalysisModule {
         Enable-UniversalGridSorting -Grid $gridGroups
         Enable-UniversalGridSorting -Grid $gridMembers
 
-        # NATIVE ROW-PAINT EVENTS: GELB FÜR INAKTIV / ROT FÜR NICHT VORHANDEN ODER LEER
+        # NATIVE ROW-PAINT EVENTS
         $gridGroups.Add_RowPrePaint({
             param($s, $e)
             if ($e.RowIndex -ge 0 -and $e.RowIndex -lt $gridGroups.Rows.Count) {
@@ -1237,17 +1111,10 @@ function Show-ADGroupAnalysisModule {
         }
 
         function Get-ComputerValidationDetails {
-            param(
-                [string]$GroupName,
-                [string]$Role
-            )
-            if ($Role -ne "Remote Desktop" -and $Role -ne "Lokaler Administrator") {
-                return @{ Name = "-"; Status = "-" }
-            }
-
+            param([string]$GroupName, [string]$Role)
+            if ($Role -ne "Remote Desktop" -and $Role -ne "Lokaler Administrator") { return @{ Name = "-"; Status = "-" } }
             $targetPC = Extract-TargetComputerName -GroupName $GroupName -Role $Role
             if (-not $targetPC) { return @{ Name = "-"; Status = "-" } }
-
             if ($script:ADComputersCache.ContainsKey($targetPC)) {
                 $cObj = $script:ADComputersCache[$targetPC]
                 $st = if ($cObj.Enabled) { "Aktiv" } else { "Inaktiv (Deaktiviert)" }
@@ -1266,49 +1133,56 @@ function Show-ADGroupAnalysisModule {
             $roles = @($script:AllGroupsData | ForEach-Object { $_."Funktion /`r`nRolle" } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique | Sort-Object)
             foreach ($r in $roles) { [void]$cmbFilterRole.Items.Add($r) }
 
-            if ($curRole -and $cmbFilterRole.Items.Contains($curRole)) {
-                $cmbFilterRole.SelectedItem = $curRole
-            } else {
-                $cmbFilterRole.SelectedIndex = 0
-            }
+            if ($curRole -and $cmbFilterRole.Items.Contains($curRole)) { $cmbFilterRole.SelectedItem = $curRole } else { $cmbFilterRole.SelectedIndex = 0 }
 
             $cmbFilterLevel.Items.Clear()
             [void]$cmbFilterLevel.Items.Add("Alle Level")
             $levels = @($script:AllGroupsData | ForEach-Object { $_."Berechtigungs-`r`nLevel" } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -ne "-" } | Select-Object -Unique | Sort-Object)
             foreach ($l in $levels) { [void]$cmbFilterLevel.Items.Add($l) }
 
-            if ($curLevel -and $cmbFilterLevel.Items.Contains($curLevel)) {
-                $cmbFilterLevel.SelectedItem = $curLevel
-            } else {
-                $cmbFilterLevel.SelectedIndex = 0
-            }
+            if ($curLevel -and $cmbFilterLevel.Items.Contains($curLevel)) { $cmbFilterLevel.SelectedItem = $curLevel } else { $cmbFilterLevel.SelectedIndex = 0 }
         }
 
         $reapplyClassificationAction = {
-            foreach ($g in $script:AllGroupsData) {
-                $c = Get-CustomGroupClassification -GroupName $g.Gruppenname -SidString $g._RawSidString
-                $compDetails = Get-ComputerValidationDetails -GroupName $g.Gruppenname -Role $c.Role
-                $g."Funktion /`r`nRolle"       = $c.Role
-                $g."Berechtigungs-`r`nLevel"   = $c.Level
-                $g."Computer-`r`nObjekt"       = $compDetails.Name
-                $g."Computer-`r`nStatus"       = $compDetails.Status
-                $g._RawRole                    = $c.Role
-                $g._RawLevel                   = $c.Level
-                $g._RawCompName                = $compDetails.Name
-                $g._RawCompStatus              = $compDetails.Status
+            $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+            try {
+                $groupMap = @{}
+                foreach ($g in $script:AllGroupsData) {
+                    $c = Get-CustomGroupClassification -GroupName $g.Gruppenname -SidString $g._RawSidString
+                    $compDetails = Get-ComputerValidationDetails -GroupName $g.Gruppenname -Role $c.Role
+                    $g."Funktion /`r`nRolle"       = $c.Role
+                    $g."Berechtigungs-`r`nLevel"   = $c.Level
+                    $g."Computer-`r`nObjekt"       = $compDetails.Name
+                    $g."Computer-`r`nStatus"       = $compDetails.Status
+                    $g._RawRole                    = $c.Role
+                    $g._RawLevel                   = $c.Level
+                    $g._RawCompName                = $compDetails.Name
+                    $g._RawCompStatus              = $compDetails.Status
+
+                    $groupMap[$g.Gruppenname] = @{
+                        Role       = $c.Role
+                        Level      = $c.Level
+                        CompName   = $compDetails.Name
+                        CompStatus = $compDetails.Status
+                    }
+                }
+
+                foreach ($m in $script:AllMembersFlatList) {
+                    $gName = $m."Gruppen Name"
+                    if ($groupMap.ContainsKey($gName)) {
+                        $info = $groupMap[$gName]
+                        $m."Funktion / Rolle"       = $info.Role
+                        $m."Berechtigungs-Level"    = $info.Level
+                        $m."Computer-Objekt"        = $info.CompName
+                        $m."Computer-Status"        = $info.CompStatus
+                    }
+                }
+
+                & $updateFilterDropdownsAction
+                & $filterGroupsGridAction
+            } finally {
+                $form.Cursor = [System.Windows.Forms.Cursors]::Default
             }
-            foreach ($m in $script:AllMembersFlatList) {
-                $parentGroup = $script:AllGroupsData | Where-Object { $_.Gruppenname -eq $m."Gruppen Name" }
-                $parentSid = if ($parentGroup) { $parentGroup._RawSidString } else { "" }
-                $c = Get-CustomGroupClassification -GroupName $m."Gruppen Name" -SidString $parentSid
-                $compDetails = Get-ComputerValidationDetails -GroupName $m."Gruppen Name" -Role $c.Role
-                $m."Funktion / Rolle"       = $c.Role
-                $m."Berechtigungs-Level"    = $c.Level
-                $m."Computer-Objekt"        = $compDetails.Name
-                $m."Computer-Status"        = $compDetails.Status
-            }
-            & $updateFilterDropdownsAction
-            & $filterGroupsGridAction
         }
 
         $filterMembersAction = {
@@ -1380,27 +1254,13 @@ function Show-ADGroupAnalysisModule {
                     $gName = [string]$row.Cells["Gruppenname"].Value
                     if (-not [string]::IsNullOrWhiteSpace($gName)) {
                         switch -Wildcard ($actionType) {
-                            "*loeschen*" {
-                                $commandsList.Add("Remove-ADGroup -Identity `"$gName`" -Confirm:`$false")
-                            }
-                            "*leeren*" {
-                                $commandsList.Add("Set-ADGroup -Identity `"$gName`" -Clear member")
-                            }
-                            "*DomainLocal*" {
-                                $commandsList.Add("Set-ADGroup -Identity `"$gName`" -GroupScope DomainLocal")
-                            }
-                            "*Global*" {
-                                $commandsList.Add("Set-ADGroup -Identity `"$gName`" -GroupScope Global")
-                            }
-                            "*aktivieren*" {
-                                $commandsList.Add("Set-ADGroup -Identity `"$gName`" -ProtectedFromAccidentalDeletion `$true")
-                            }
-                            "*deaktivieren*" {
-                                $commandsList.Add("Set-ADGroup -Identity `"$gName`" -ProtectedFromAccidentalDeletion `$false")
-                            }
-                            "*abfragen*" {
-                                $commandsList.Add("Get-ADGroup -Identity `"$gName`" -Properties *")
-                            }
+                            "*loeschen*" { $commandsList.Add("Remove-ADGroup -Identity `"$gName`" -Confirm:`$false") }
+                            "*leeren*" { $commandsList.Add("Set-ADGroup -Identity `"$gName`" -Clear member") }
+                            "*DomainLocal*" { $commandsList.Add("Set-ADGroup -Identity `"$gName`" -GroupScope DomainLocal") }
+                            "*Global*" { $commandsList.Add("Set-ADGroup -Identity `"$gName`" -GroupScope Global") }
+                            "*aktivieren*" { $commandsList.Add("Set-ADGroup -Identity `"$gName`" -ProtectedFromAccidentalDeletion `$true") }
+                            "*deaktivieren*" { $commandsList.Add("Set-ADGroup -Identity `"$gName`" -ProtectedFromAccidentalDeletion `$false") }
+                            "*abfragen*" { $commandsList.Add("Get-ADGroup -Identity `"$gName`" -Properties *") }
                         }
                     }
                 }
@@ -1756,9 +1616,7 @@ function Show-ADGroupAnalysisModule {
         $gridGroups.Add_SelectionChanged($onGroupSelectedAction)
         $gridGroups.Add_CellClick($onGroupSelectedAction)
 
-        $cmbActionType.Add_SelectedIndexChanged({
-            & $updateCommandsPreviewAction
-        })
+        $cmbActionType.Add_SelectedIndexChanged({ & $updateCommandsPreviewAction })
 
         $btnCopyCmd.Add_Click({
             if (-not [string]::IsNullOrWhiteSpace($txtPSCommand.Text)) {
@@ -1837,12 +1695,8 @@ function Show-ADGroupAnalysisModule {
                                     $groupEntry.CommitChanges()
                                     $successCount++
                                 }
-                                "*aktivieren*" {
-                                    $successCount++
-                                }
-                                "*deaktivieren*" {
-                                    $successCount++
-                                }
+                                "*aktivieren*" { $successCount++ }
+                                "*deaktivieren*" { $successCount++ }
                             }
                         }
                         $searcher.Dispose()
@@ -1856,7 +1710,6 @@ function Show-ADGroupAnalysisModule {
             }
         })
 
-        # Beschreibung ändern -> Generiert PowerShell-Befehl für die Befehlsleiste
         $btnSetDesc.Add_Click({
             if ($gridGroups.SelectedRows.Count -eq 0) { return }
             $selectedRow = $gridGroups.SelectedRows[0]
@@ -1864,7 +1717,7 @@ function Show-ADGroupAnalysisModule {
             $curDesc = [string]$selectedRow.Cells["Beschreibung"].Value
 
             $res = Show-EditDescriptionDialog -GroupName $selectedGroup -CurrentDescription $curDesc
-            if ($res.Saved -and $res.Value -ne $curDesc) {
+            if ($res.Saved) {
                 $newDesc = $res.Value
                 $cmdToSet = "Set-ADGroup -Identity `"$selectedGroup`" -Description `"$newDesc`""
                 $txtPSCommand.Text = $cmdToSet
@@ -1886,7 +1739,7 @@ function Show-ADGroupAnalysisModule {
         # EVENT BINDINGS
         # ----------------------------------------------------------------------
         $btnStartLoad.Add_Click({ & $loadDataAction })
-        $btnRuleEditor.Add_Click({ Show-RuleEditorDialog -OnRulesUpdated $reapplyClassificationAction })
+        $btnRuleEditor.Add_Click({ Show-RuleEditorDialog -OnRulesUpdated $reapplyClassificationAction -CurrentGroups $script:AllGroupsData })
         $chkEmptyOnly.Add_CheckedChanged({ & $filterGroupsGridAction })
         $chkNestedOnly.Add_CheckedChanged({ & $filterGroupsGridAction })
         $txtMemberSearch.Add_TextChanged({ & $filterMembersAction })
@@ -1926,7 +1779,7 @@ function Show-ADGroupAnalysisModule {
         })
 
         # ----------------------------------------------------------------------
-        # CSV EXPORT 1: GRUPPEN (MIT SEPARATEN POWERSHELL-BEFEHLSSPALTEN)
+        # CSV EXPORT 1: GRUPPEN
         # ----------------------------------------------------------------------
         $btnExportGroups.Add_Click({
             if ($script:AllGroupsData.Count -eq 0) {
@@ -1969,7 +1822,6 @@ function Show-ADGroupAnalysisModule {
                             "Änderungsuhrzeit"                    = $g._RawChangedTime
                             "Beschreibung"                        = $g.Beschreibung
                             "DistinguishedName"                   = $g.DistinguishedName
-                            # Eigene Spalten für jeden PowerShell-Befehl
                             "PS-Befehl (Loeschen)"                = "Remove-ADGroup -Identity `"$($g.Gruppenname)`" -Confirm:`$false"
                             "PS-Befehl (Mitglieder leeren)"       = "Set-ADGroup -Identity `"$($g.Gruppenname)`" -Clear member"
                             "PS-Befehl (Scope DomainLocal)"       = "Set-ADGroup -Identity `"$($g.Gruppenname)`" -GroupScope DomainLocal"
@@ -2021,14 +1873,11 @@ function Show-ADGroupAnalysisModule {
 
         [void]$form.ShowDialog()
     } finally {
-        if ($null -ne $form) {
-            $form.Dispose()
-        }
+        if ($null -ne $form) { $form.Dispose() }
         $script:AllGroupsData.Clear()
         $script:GroupMembersCache.Clear()
         $script:AllMembersFlatList.Clear()
         $script:ADComputersCache.Clear()
-
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
     }
