@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
-    Tool 17: Active Directory Gruppen- & Mitgliedschafts-Analyse (Path Permission Fix)
+    Tool 17: Active Directory Gruppen- & Mitgliedschafts-Analyse (Inkl. Live-Gruppenfilter)
 .DESCRIPTION
-    - Robuste Pfadermittlung für 'ADGroup_ClassificationRules.txt' ohne System32-Zugriffsfehler.
-    - Automatische Speicherung der Regeln (auch bei Auto-Suggest).
-    - Auto-Vorschlagsgenerator für Klassifizierungsregeln aus vorhandenen Gruppen.
-    - Layout-Bereinigung: Skalierbares UI für 125%/150% DPI.
+    - Zusätzliche Live-Filterleiste direkt über der Gruppen-Tabelle (nach dem Laden).
+    - Scope-sichere Dialog-Aufrufe (Show-GroupDetailDialog, Show-EditDescriptionDialog).
+    - Existierende 'ADGroup_ClassificationRules.txt' wird beim Start niemals überschrieben.
+    - Schriftgröße 10pt / 10.5pt Bold mit überlappungsfreiem FlowLayout (DPI-sicher).
     - Umschaltbare PowerShell-Aktionsleiste mit Multi-Command Generator.
     - Vollständige CSV-Exporte mit separaten PowerShell-Befehlsspalten und getrenntem Datum/Uhrzeit.
     - Built-In Erkennung strikt nach Well-Known SIDs / Standard-RIDs mit Level 'AD'.
@@ -38,7 +38,7 @@ $script:UITheme = @{
 }
 
 # ------------------------------------------------------------------------------
-# REGEL-SPEICHERPFAD & PERSISTENZ (Sicherer Pfad)
+# REGEL-SPEICHERPFAD & PERSISTENZ
 # ------------------------------------------------------------------------------
 $scriptDir = $null
 if ($PSScriptRoot) {
@@ -78,6 +78,7 @@ function Save-ClassificationRulesToFile {
 
 function Load-ClassificationRulesFromFile {
     $script:ActiveRules.Clear()
+
     if (Test-Path $script:RulesFilePath) {
         try {
             $content = Get-Content -Path $script:RulesFilePath -Raw -Encoding UTF8
@@ -319,7 +320,237 @@ function Enable-UniversalGridSorting {
 }
 
 # ------------------------------------------------------------------------------
-# POPUP-GUI: BESCHREIBUNGS-EDITOR
+# POPUP-GUI 1: DETAIL-DASHBOARD (Show-GroupDetailDialog)
+# ------------------------------------------------------------------------------
+function Show-GroupDetailDialog {
+    param(
+        [PSCustomObject]$GroupObj,
+        [System.Collections.Generic.List[PSCustomObject]]$MembersList,
+        [string]$DomainName
+    )
+
+    $detailForm = New-Object System.Windows.Forms.Form
+    $detailForm.Text = "Gruppen-Detailansicht: $($GroupObj.Gruppenname)"
+    $detailForm.Size = New-Object System.Drawing.Size(1260, 800)
+    $detailForm.MinimumSize = New-Object System.Drawing.Size(1000, 620)
+    $detailForm.StartPosition = "CenterParent"
+    $detailForm.Font = $script:UITheme.BaseFont
+    $detailForm.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
+
+    try {
+        $topInfoPanel = New-Object System.Windows.Forms.Panel
+        $topInfoPanel.Dock = [System.Windows.Forms.DockStyle]::Top
+        $topInfoPanel.Height = 210
+        $topInfoPanel.BackColor = [System.Drawing.Color]::White
+        $topInfoPanel.Padding = New-Object System.Windows.Forms.Padding(15, 10, 15, 10)
+        $detailForm.Controls.Add($topInfoPanel)
+
+        $grpHeader = New-Object System.Windows.Forms.GroupBox
+        $grpHeader.Text = "Gruppen-Stammdaten, Klassifizierung & Computer-Gegenpruefung"
+        $grpHeader.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $grpHeader.Font = $script:UITheme.BoldFont
+        $topInfoPanel.Controls.Add($grpHeader)
+
+        $tableLayout = New-Object System.Windows.Forms.TableLayoutPanel
+        $tableLayout.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $tableLayout.ColumnCount = 4
+        $tableLayout.RowCount = 5
+        $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 18)))
+        $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 32)))
+        $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 18)))
+        $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 32)))
+        $grpHeader.Controls.Add($tableLayout)
+
+        function Add-InfoField {
+            param([string]$Title, [string]$Value, [int]$Col, [int]$Row, [System.Drawing.Color]$ValColor = [System.Drawing.Color]::Black)
+            $lblT = New-Object System.Windows.Forms.Label
+            $lblT.Text = "$($Title):"
+            $lblT.Font = $script:UITheme.BoldFont
+            $lblT.ForeColor = [System.Drawing.Color]::FromArgb(60, 70, 80)
+            $lblT.Dock = [System.Windows.Forms.DockStyle]::Fill
+            $lblT.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+            $tableLayout.Controls.Add($lblT, $Col, $Row)
+
+            $lblV = New-Object System.Windows.Forms.Label
+            $lblV.Text = if ([string]::IsNullOrWhiteSpace($Value)) { "-" } else { $Value }
+            $lblV.Font = $script:UITheme.BaseFont
+            $lblV.ForeColor = $ValColor
+            $lblV.Dock = [System.Windows.Forms.DockStyle]::Fill
+            $lblV.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+            $tableLayout.Controls.Add($lblV, ($Col + 1), $Row)
+        }
+
+        $gCat = $GroupObj."Gruppen-`r`nKategorie"
+        $gScope = $GroupObj."Gruppen-`r`nBereich"
+        $gRole = $GroupObj."Funktion /`r`nRolle"
+        $compObj = $GroupObj."Computer-`r`nObjekt"
+        $compSt = $GroupObj."Computer-`r`nStatus"
+        $created = $GroupObj."Erstellt`r`nam"
+        $changed = $GroupObj."Geändert`r`nam"
+        $nestedFlag = $GroupObj."Verschachtelt`r`n(Ja/Nein)"
+        $nestingDetail = $GroupObj."Untergruppen`r`n(Enthält/Ist)"
+
+        Add-InfoField -Title "Gruppenname" -Value $GroupObj.Gruppenname -Col 0 -Row 0
+        Add-InfoField -Title "Status / Typ" -Value "$($GroupObj.'Gruppen-Status') ($gCat - $gScope)" -Col 2 -Row 0
+
+        $roleColor = if ($gRole -eq "Built-In") { [System.Drawing.Color]::FromArgb(90, 30, 150) } else { [System.Drawing.Color]::FromArgb(0, 70, 150) }
+        Add-InfoField -Title "Funktion / Rolle" -Value $gRole -Col 0 -Row 1 -ValColor $roleColor
+        
+        $compColor = if ($compSt -like "*Nicht vorhanden*") { [System.Drawing.Color]::DarkRed }
+                     elseif ($compSt -like "*Aktiv*") { [System.Drawing.Color]::DarkGreen }
+                     elseif ($compSt -like "*Inaktiv*") { [System.Drawing.Color]::DarkOrange }
+                     else { [System.Drawing.Color]::Black }
+        $compVal = if ($compObj -ne "-") { "$compObj [$compSt]" } else { "-" }
+        Add-InfoField -Title "Computer-Objekt" -Value $compVal -Col 2 -Row 1 -ValColor $compColor
+
+        $memberStats = "Gesamt: $($GroupObj.'Mitglieder`r`nGesamt') | User: $($GroupObj.'Anz.`r`nUser') | PC: $($GroupObj.'Anz.`r`nComputer') | Untergruppen: $($GroupObj.'Anz.`r`nGruppen')"
+        Add-InfoField -Title "Mitgliederzaehlung" -Value $memberStats -Col 0 -Row 2
+        Add-InfoField -Title "Verschachtelung" -Value "$nestedFlag ($nestingDetail)" -Col 2 -Row 2
+
+        Add-InfoField -Title "Erstellt am" -Value $created -Col 0 -Row 3
+        Add-InfoField -Title "Geaendert am" -Value $changed -Col 2 -Row 3
+
+        Add-InfoField -Title "Beschreibung" -Value $GroupObj.Beschreibung -Col 0 -Row 4
+        Add-InfoField -Title "DistinguishedName" -Value $GroupObj.DistinguishedName -Col 2 -Row 4
+
+        $bottomPanel = New-Object System.Windows.Forms.Panel
+        $bottomPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $bottomPanel.Padding = New-Object System.Windows.Forms.Padding(15, 5, 15, 15)
+        $detailForm.Controls.Add($bottomPanel)
+        $bottomPanel.BringToFront()
+
+        $grpTable = New-Object System.Windows.Forms.GroupBox
+        $grpTable.Text = "Enthaltene Gruppenmitglieder (Objekt-Details)"
+        $grpTable.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $grpTable.Font = $script:UITheme.BoldFont
+        $bottomPanel.Controls.Add($grpTable)
+
+        $pnlSubFilter = New-Object System.Windows.Forms.Panel
+        $pnlSubFilter.Dock = [System.Windows.Forms.DockStyle]::Top
+        $pnlSubFilter.Height = 44
+        $pnlSubFilter.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 252)
+        $grpTable.Controls.Add($pnlSubFilter)
+
+        $lblSubSearch = New-Object System.Windows.Forms.Label
+        $lblSubSearch.Text = "In Mitgliedern suchen:"
+        $lblSubSearch.Location = New-Object System.Drawing.Point(8, 11)
+        $lblSubSearch.AutoSize = $true
+        $lblSubSearch.Font = $script:UITheme.BaseFont
+        $pnlSubFilter.Controls.Add($lblSubSearch)
+
+        $txtSubSearch = New-Object System.Windows.Forms.TextBox
+        $txtSubSearch.Location = New-Object System.Drawing.Point(165, 8)
+        $txtSubSearch.Size = New-Object System.Drawing.Size(240, 25)
+        $txtSubSearch.Font = $script:UITheme.BaseFont
+        $pnlSubFilter.Controls.Add($txtSubSearch)
+
+        $btnSubExport = New-Object System.Windows.Forms.Button
+        $btnSubExport.Text = "CSV Export dieser Gruppe"
+        $btnSubExport.Location = New-Object System.Drawing.Point(920, 6)
+        $btnSubExport.Size = New-Object System.Drawing.Size(220, 30)
+        $btnSubExport.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        $btnSubExport.BackColor = [System.Drawing.Color]::FromArgb(16, 124, 65)
+        $btnSubExport.ForeColor = [System.Drawing.Color]::White
+        $btnSubExport.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        $btnSubExport.Font = $script:UITheme.BoldFont
+        $pnlSubFilter.Controls.Add($btnSubExport)
+
+        $gridSubMembers = New-Object System.Windows.Forms.DataGridView
+        $gridSubMembers.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $gridSubMembers.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::DisplayedCells
+        Apply-StandardGridTheme $gridSubMembers
+        $grpTable.Controls.Add($gridSubMembers)
+        $gridSubMembers.BringToFront()
+
+        Enable-UniversalGridSorting -Grid $gridSubMembers
+
+        $gridSubMembers.Add_RowPrePaint({
+            param($s, $e)
+            if ($e.RowIndex -ge 0 -and $e.RowIndex -lt $gridSubMembers.Rows.Count) {
+                $row = $gridSubMembers.Rows[$e.RowIndex]
+                $st = [string]$row.Cells["Status"].Value
+                $typ = [string]$row.Cells["Typ"].Value
+                if ($st -like "*Inaktiv*") {
+                    $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(180, 0, 0)
+                } elseif ($typ -like "*Gruppe*") {
+                    $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(0, 70, 150)
+                }
+            }
+        })
+
+        $filterSubAction = {
+            $filterVal = $txtSubSearch.Text.Trim()
+            if (-not $MembersList -or $MembersList.Count -eq 0) {
+                $gridSubMembers.DataSource = $null
+                return
+            }
+
+            $res = $MembersList | Where-Object {
+                if ([string]::IsNullOrWhiteSpace($filterVal)) { return $true }
+                $_.Name -like "*$filterVal*" -or `
+                $_.SamAccountName -like "*$filterVal*" -or `
+                $_.Beschreibung -like "*$filterVal*" -or `
+                $_.Typ -like "*$filterVal*" -or `
+                $_."OU / Pfad" -like "*$filterVal*"
+            }
+
+            $gridSubMembers.SuspendLayout()
+            $gridSubMembers.DataSource = [System.Collections.ArrayList]::new(@($res))
+            $gridSubMembers.ResumeLayout()
+        }
+
+        $txtSubSearch.Add_TextChanged($filterSubAction)
+
+        $btnSubExport.Add_Click({
+            if (-not $MembersList -or $MembersList.Count -eq 0) {
+                [System.Windows.Forms.MessageBox]::Show("Diese Gruppe besitzt keine Mitglieder zum Exportieren.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                return
+            }
+
+            $sfd = New-Object System.Windows.Forms.SaveFileDialog
+            $sfd.Filter = "CSV-Datei (*.csv)|*.csv"
+            $sfd.FileName = "AD_Gruppe_$($GroupObj.Gruppenname)_$(Get-Date -Format 'yyyyMMdd_HHmm').csv"
+
+            if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                try {
+                    $curDate = Get-Date -Format "yyyyMMdd"
+                    $curTime = Get-Date -Format "HH:mm:ss"
+                    $rows = foreach ($m in $MembersList) {
+                        [PSCustomObject]@{
+                            "Scan Datum"                      = $curDate
+                            "Scan Uhrzeit"                    = $curTime
+                            "Domain Name"                     = $DomainName
+                            "Gruppen Name"                    = $GroupObj.Gruppenname
+                            "Funktion / Rolle"                = $gRole
+                            "Berechtigungs-Level"             = $GroupObj."Berechtigungs-`r`nLevel"
+                            "Computer-Objekt"                 = $compObj
+                            "Computer-Status"                 = $compSt
+                            "Typ"                             = $m.Typ
+                            "Mitgliedsname"                   = $m.Name
+                            "User (SAM)"                      = $m.SamAccountName
+                            "Mitglied Status (Aktiv/Inaktiv)" = $m.Status
+                            "Beschreibung"                    = $m.Beschreibung
+                            "OU / Pfad"                       = $m."OU / Pfad"
+                            "DistinguishedName"               = $m.DN
+                        }
+                    }
+                    $rows | Export-Csv -Path $sfd.FileName -Delimiter ';' -NoTypeInformation -Encoding UTF8
+                    [System.Windows.Forms.MessageBox]::Show("Export erfolgreich erstellt!`r`n$($sfd.FileName)", "Export", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+                } catch {
+                    [System.Windows.Forms.MessageBox]::Show("Fehler beim Exportieren: $($_.Exception.Message)", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+                }
+            }
+        })
+
+        & $filterSubAction
+        [void]$detailForm.ShowDialog()
+    } finally {
+        $detailForm.Dispose()
+    }
+}
+
+# ------------------------------------------------------------------------------
+# POPUP-GUI 2: BESCHREIBUNGS-EDITOR
 # ------------------------------------------------------------------------------
 function Show-EditDescriptionDialog {
     param([string]$GroupName, [string]$CurrentDescription)
@@ -402,7 +633,7 @@ function Show-EditDescriptionDialog {
 }
 
 # ------------------------------------------------------------------------------
-# POPUP-GUI: REGEL-EDITOR (Speichert automatisch in TXT-Datei)
+# POPUP-GUI 3: REGEL-EDITOR
 # ------------------------------------------------------------------------------
 function Show-RuleEditorDialog {
     param(
@@ -991,25 +1222,48 @@ function Show-ADGroupAnalysisModule {
         $form.Controls.Add($splitContainer)
         $splitContainer.BringToFront()
 
+        # LINKE SEITE: GRUPPEN (MIT LIVE-FILTERLEISTE)
         $grpBoxLeft = New-Object System.Windows.Forms.GroupBox
-        $grpBoxLeft.Text = "AD Gruppen (Klick auf Spalte sortiert | Doppelklick oeffnet Detail-Dashboard)"
+        $grpBoxLeft.Text = "AD Gruppen (Klick sortiert | Doppelklick oeffnet Detail-Dashboard)"
         $grpBoxLeft.Dock = [System.Windows.Forms.DockStyle]::Fill
         $grpBoxLeft.Font = $script:UITheme.BoldFont
         $splitContainer.Panel1.Controls.Add($grpBoxLeft)
+
+        $pnlGroupFilter = New-Object System.Windows.Forms.FlowLayoutPanel
+        $pnlGroupFilter.Dock = [System.Windows.Forms.DockStyle]::Top
+        $pnlGroupFilter.Height = 44
+        $pnlGroupFilter.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 252)
+        $pnlGroupFilter.Padding = New-Object System.Windows.Forms.Padding(8, 8, 8, 8)
+        $pnlGroupFilter.WrapContents = $false
+        $grpBoxLeft.Controls.Add($pnlGroupFilter)
+
+        $lblLiveGroupSearch = New-Object System.Windows.Forms.Label
+        $lblLiveGroupSearch.Text = "In Gruppen filtern:"
+        $lblLiveGroupSearch.AutoSize = $true
+        $lblLiveGroupSearch.Font = $script:UITheme.BaseFont
+        $lblLiveGroupSearch.Margin = New-Object System.Windows.Forms.Padding(0, 4, 8, 0)
+        $pnlGroupFilter.Controls.Add($lblLiveGroupSearch)
+
+        $txtLiveGroupSearch = New-Object System.Windows.Forms.TextBox
+        $txtLiveGroupSearch.Size = New-Object System.Drawing.Size(260, 27)
+        $txtLiveGroupSearch.Font = $script:UITheme.BaseFont
+        $txtLiveGroupSearch.Margin = New-Object System.Windows.Forms.Padding(0, 0, 15, 0)
+        $pnlGroupFilter.Controls.Add($txtLiveGroupSearch)
 
         $gridGroups = New-Object System.Windows.Forms.DataGridView
         $gridGroups.Dock = [System.Windows.Forms.DockStyle]::Fill
         $gridGroups.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::DisplayedCells
         Apply-StandardGridTheme $gridGroups
         $grpBoxLeft.Controls.Add($gridGroups)
+        $gridGroups.BringToFront()
 
+        # RECHTE SEITE: MITGLIEDER
         $grpBoxRight = New-Object System.Windows.Forms.GroupBox
         $grpBoxRight.Text = "Gruppenmitglieder (Klick auf Spalte sortiert)"
         $grpBoxRight.Dock = [System.Windows.Forms.DockStyle]::Fill
         $grpBoxRight.Font = $script:UITheme.BoldFont
         $splitContainer.Panel2.Controls.Add($grpBoxRight)
 
-        # MITGLIEDER-FILTERLEISTE
         $pnlMemberFilter = New-Object System.Windows.Forms.FlowLayoutPanel
         $pnlMemberFilter.Dock = [System.Windows.Forms.DockStyle]::Top
         $pnlMemberFilter.Height = 44
@@ -1197,6 +1451,9 @@ function Show-ADGroupAnalysisModule {
             }
         }
 
+        # ----------------------------------------------------------------------
+        # DYNAMISCHER FILTER FÜR MITGLIEDER (RECHTE TABELLE)
+        # ----------------------------------------------------------------------
         $filterMembersAction = {
             $filter = $txtMemberSearch.Text.Trim()
             if (-not $script:CurrentActiveGroupMembers -or $script:CurrentActiveGroupMembers.Count -eq 0) {
@@ -1218,9 +1475,13 @@ function Show-ADGroupAnalysisModule {
             $gridMembers.ResumeLayout()
         }
 
+        # ----------------------------------------------------------------------
+        # DYNAMISCHER FILTER FÜR GRUPPEN (LINKE TABELLE + LIVE-TEXTSUCHE)
+        # ----------------------------------------------------------------------
         $filterGroupsGridAction = {
             $onlyEmpty  = $chkEmptyOnly.Checked
             $onlyNested = $chkNestedOnly.Checked
+            $liveText   = $txtLiveGroupSearch.Text.Trim()
 
             $selRole  = if ($cmbFilterRole.SelectedItem) { $cmbFilterRole.SelectedItem.ToString() } else { "Alle Rollen" }
             $selLevel = if ($cmbFilterLevel.SelectedItem) { $cmbFilterLevel.SelectedItem.ToString() } else { "Alle Level" }
@@ -1235,7 +1496,19 @@ function Show-ADGroupAnalysisModule {
                 $matchCat    = if ($selCat -ne "Alle Kategorien") { ($_."Gruppen-`r`nKategorie" -eq $selCat) } else { $true }
                 $matchScope  = if ($selScope -ne "Alle Bereiche") { ($_."Gruppen-`r`nBereich" -eq $selScope) } else { $true }
 
-                $matchEmpty -and $matchNested -and $matchRole -and $matchLevel -and $matchCat -and $matchScope
+                $matchLive = if ([string]::IsNullOrWhiteSpace($liveText)) {
+                    $true
+                } else {
+                    ($_.Gruppenname -like "*$liveText*") -or `
+                    ($_.Beschreibung -like "*$liveText*") -or `
+                    ($_."Funktion /`r`nRolle" -like "*$liveText*") -or `
+                    ($_."Berechtigungs-`r`nLevel" -like "*$liveText*") -or `
+                    ($_."Computer-`r`nObjekt" -like "*$liveText*") -or `
+                    ($_."Computer-`r`nStatus" -like "*$liveText*") -or `
+                    ($_.DistinguishedName -like "*$liveText*")
+                }
+
+                $matchEmpty -and $matchNested -and $matchRole -and $matchLevel -and $matchCat -and $matchScope -and $matchLive
             }
 
             $gridGroups.SuspendLayout()
@@ -1628,6 +1901,9 @@ function Show-ADGroupAnalysisModule {
         $gridGroups.Add_SelectionChanged($onGroupSelectedAction)
         $gridGroups.Add_CellClick($onGroupSelectedAction)
 
+        # Event für Live-Filter auf Gruppennamen
+        $txtLiveGroupSearch.Add_TextChanged({ & $filterGroupsGridAction })
+
         $cmbActionType.Add_SelectedIndexChanged({ & $updateCommandsPreviewAction })
 
         $btnCopyCmd.Add_Click({
@@ -1722,6 +1998,7 @@ function Show-ADGroupAnalysisModule {
             }
         })
 
+        # Beschreibung ändern -> Generiert PowerShell-Befehl für die Befehlsleiste
         $btnSetDesc.Add_Click({
             if ($gridGroups.SelectedRows.Count -eq 0) { return }
             $selectedRow = $gridGroups.SelectedRows[0]
@@ -1768,6 +2045,7 @@ function Show-ADGroupAnalysisModule {
             $cmbFilterScope.SelectedIndex = 0
             $chkEmptyOnly.Checked = $false
             $chkNestedOnly.Checked = $false
+            $txtLiveGroupSearch.Text = ""
             & $filterGroupsGridAction
         })
 
