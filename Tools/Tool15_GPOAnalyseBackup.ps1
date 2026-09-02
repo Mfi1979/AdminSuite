@@ -1,7 +1,7 @@
 <#
 ==================================================================================
  Tool 15: Active Directory GPO Enterprise Suite
- Version: 1.5.9 (Lade-Reihenfolge korrigiert, Multi-DPI, ISE-Safe)
+ Version: 1.6.5 (Call-Operator-Fix, HTML-Export getrennt, Tab 3, ISE-Safe)
  
  Register 1: GPO Uebersicht & Verlinkungs-Analyse
              - Schnelle ADSI/LDAP-Abfrage aller GPOs, WMI-Filter & OU-Verlinkungen
@@ -15,16 +15,20 @@
              - Master-Detail: Zeigt rechts alle Verlinkungsziele (OUs/Domaene)
              - 2-zeiliger Titelbereich (kein Abschneiden langer GPO-Namen)
  
- Register 2: GPO Richtlinien-Einstellungen & Inspektor (Praeziser XML-Parser)
-             - Bereinigte Spalte "Konfigurierter Wert" (reine Werte ohne Explain-Texte)
+ Register 2: GPO Richtlinien-Einstellungen & Inspektor
+             - Synchronisierter Ansichts-Filter (Exakte Erkennung ungelinkter GPOs)
+             - Sammel-Laden & CSV-Export aller gefilterten GPOs
              - Vollstaendige Richtlinienerklaerung rechts im Detailbereich
  
  Register 3: GPO Backup & Verknuepfungs-Audit
+             - HTML (Ausgewaehlt): HTML-Bericht der markierten GPO erstellen & oeffnen
+             - HTML (Alle): HTML-Massenexport aller gefilterten GPOs in Unterordner
+             - Ansichts-Filter: Alle / Nur verlinkte / Nicht verlinkte (Unlinked)
+             - Live-Suchfeld fuer schnelle GPO-Filterung
+             - Selektives Backup (z.B. nur alle 13 ungelinkten GPOs sichern)
+             - CSV-Export fuer Bestandsliste
              - Voll-dynamisches SplitContainer-Layout
-             - Konfigurierbarer Ziel-Pfad mit Ordnerauswahl-Dialog
-             - Einzelsicherung oder Gesamtsicherung aller GPOs
-             - Datums- & Zeitstruktur: [Zielpfad]\[GPO-Name]\[JJJJMMTT_HHMM]
-             - Erstellung von 'GPO_Link_Info.txt'
+             - Erstellung von 'GPO_Link_Info.txt' pro GPO-Backup
  
  Register 4: GPO-Vergleich (Diff)
              - Entzerrte 2-Zeilen-Kopfleiste (keine Ueberlagerungen)
@@ -36,18 +40,18 @@
 ==================================================================================
 #>
 
-# 1. Assemblies zuerst laden
+# 1. Assemblies laden
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.DirectoryServices
 Import-Module GroupPolicy -ErrorAction Stop
 
-# 2. VisualStyles erst nach geladener Assembly initialisieren
+# 2. VisualStyles initialisieren
 try {
     [System.Windows.Forms.Application]::EnableVisualStyles()
 } catch {}
 
-$script:ToolVersion = "v1.5.9"
+$script:ToolVersion = "v1.6.5"
 
 function Show-Tool15 {
     [CmdletBinding()]
@@ -245,54 +249,73 @@ function Show-Tool15 {
 
     $panelSettingsTop = New-Object System.Windows.Forms.Panel
     $panelSettingsTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelSettingsTop.Height = 65
+    $panelSettingsTop.Height = 85
     $panelSettingsTop.BackColor = [System.Drawing.Color]::FromArgb(242, 245, 250)
     $panelSettingsTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
+    # Zeile 1: Ansichts-Filter, GPO-Auswahl & Laden
+    $lblSettingsViewFilter = New-Object System.Windows.Forms.Label
+    $lblSettingsViewFilter.Text = "Ansicht:"
+    $lblSettingsViewFilter.Location = New-Object System.Drawing.Point(12, 16)
+    $lblSettingsViewFilter.AutoSize = $true
+    $lblSettingsViewFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+
+    $comboSettingsViewMode = New-Object System.Windows.Forms.ComboBox
+    $comboSettingsViewMode.Location = New-Object System.Drawing.Point(75, 13)
+    $comboSettingsViewMode.Size = New-Object System.Drawing.Size(210, 25)
+    $comboSettingsViewMode.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboSettingsViewMode.Items.Add("Alle GPOs")
+    [void]$comboSettingsViewMode.Items.Add("Nur verlinkte GPOs")
+    [void]$comboSettingsViewMode.Items.Add("Nicht verlinkte GPOs (Unlinked)")
+    $comboSettingsViewMode.SelectedIndex = 0
+
     $lblGpo = New-Object System.Windows.Forms.Label
     $lblGpo.Text = "GPO:"
-    $lblGpo.Location = New-Object System.Drawing.Point(12, 19)
+    $lblGpo.Location = New-Object System.Drawing.Point(300, 16)
     $lblGpo.AutoSize = $true
     $lblGpo.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboGpo = New-Object System.Windows.Forms.ComboBox
-    $comboGpo.Location = New-Object System.Drawing.Point(55, 16)
-    $comboGpo.Size = New-Object System.Drawing.Size(360, 25)
+    $comboGpo.Location = New-Object System.Drawing.Point(345, 13)
+    $comboGpo.Size = New-Object System.Drawing.Size(390, 25)
     $comboGpo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
+    $btnLoadSettings = New-Object System.Windows.Forms.Button
+    $btnLoadSettings.Text = "Laden"
+    $btnLoadSettings.Location = New-Object System.Drawing.Point(745, 11)
+    $btnLoadSettings.Size = New-Object System.Drawing.Size(95, 29)
+    $btnLoadSettings.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
+
+    # Zeile 2: Live-Suche, CSV-Export & Status
     $lblFilter = New-Object System.Windows.Forms.Label
     $lblFilter.Text = "Suche:"
-    $lblFilter.Location = New-Object System.Drawing.Point(430, 19)
+    $lblFilter.Location = New-Object System.Drawing.Point(12, 51)
     $lblFilter.AutoSize = $true
     $lblFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtFilter = New-Object System.Windows.Forms.TextBox
-    $txtFilter.Location = New-Object System.Drawing.Point(485, 16)
-    $txtFilter.Size = New-Object System.Drawing.Size(190, 25)
-
-    $btnLoadSettings = New-Object System.Windows.Forms.Button
-    $btnLoadSettings.Text = "Laden"
-    $btnLoadSettings.Location = New-Object System.Drawing.Point(690, 14)
-    $btnLoadSettings.Size = New-Object System.Drawing.Size(95, 30)
-    $btnLoadSettings.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
+    $txtFilter.Location = New-Object System.Drawing.Point(75, 48)
+    $txtFilter.Size = New-Object System.Drawing.Size(210, 25)
 
     $btnExportCsv = New-Object System.Windows.Forms.Button
     $btnExportCsv.Text = "CSV Export"
-    $btnExportCsv.Location = New-Object System.Drawing.Point(792, 14)
-    $btnExportCsv.Size = New-Object System.Drawing.Size(105, 30)
+    $btnExportCsv.Location = New-Object System.Drawing.Point(300, 46)
+    $btnExportCsv.Size = New-Object System.Drawing.Size(110, 29)
     $btnExportCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
     $lblSettingsStatus = New-Object System.Windows.Forms.Label
     $lblSettingsStatus.Text = "Bereit."
-    $lblSettingsStatus.Location = New-Object System.Drawing.Point(910, 20)
+    $lblSettingsStatus.Location = New-Object System.Drawing.Point(425, 52)
     $lblSettingsStatus.AutoSize = $true
     $lblSettingsStatus.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
 
+    $panelSettingsTop.Controls.Add($lblSettingsViewFilter)
+    $panelSettingsTop.Controls.Add($comboSettingsViewMode)
     $panelSettingsTop.Controls.Add($lblGpo)
     $panelSettingsTop.Controls.Add($comboGpo)
+    $panelSettingsTop.Controls.Add($btnLoadSettings)
     $panelSettingsTop.Controls.Add($lblFilter)
     $panelSettingsTop.Controls.Add($txtFilter)
-    $panelSettingsTop.Controls.Add($btnLoadSettings)
     $panelSettingsTop.Controls.Add($btnExportCsv)
     $panelSettingsTop.Controls.Add($lblSettingsStatus)
 
@@ -351,6 +374,7 @@ function Show-Tool15 {
     $panelSettingsLeft.Controls.Add($lblTableTitle)
     $splitSettings.Panel1.Controls.Add($panelSettingsLeft)
 
+    # Rechte Seite Tab 2 (Detailbereich)
     $panelSettingsRight = New-Object System.Windows.Forms.Panel
     $panelSettingsRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelSettingsRight.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 10)
@@ -377,7 +401,7 @@ function Show-Tool15 {
     $tabSettings.Controls.Add($panelSettingsTop)
 
     # =========================================================================
-    # REGISTER 3: GPO Backup & Verknuepfungs-Audit
+    # REGISTER 3: GPO Backup & Verknuepfungs-Audit (Mit getrenntem HTML-Export)
     # =========================================================================
     $tabBackup = New-Object System.Windows.Forms.TabPage
     $tabBackup.Text = "3. GPO Backup & Verknuepfungs-Status"
@@ -385,10 +409,11 @@ function Show-Tool15 {
 
     $panelBackupTop = New-Object System.Windows.Forms.Panel
     $panelBackupTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelBackupTop.Height = 105
+    $panelBackupTop.Height = 108
     $panelBackupTop.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
     $panelBackupTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
+    # Zeile 1: Pfad, Durchsuchen, CSV-Export & 2 getrennte HTML-Buttons
     $lblTargetPath = New-Object System.Windows.Forms.Label
     $lblTargetPath.Text = "Backup Ziel-Pfad:"
     $lblTargetPath.Location = New-Object System.Drawing.Point(12, 17)
@@ -396,51 +421,106 @@ function Show-Tool15 {
     $lblTargetPath.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtBackupTargetDir = New-Object System.Windows.Forms.TextBox
-    $txtBackupTargetDir.Location = New-Object System.Drawing.Point(165, 14)
-    $txtBackupTargetDir.Size = New-Object System.Drawing.Size(480, 25)
+    $txtBackupTargetDir.Location = New-Object System.Drawing.Point(140, 14)
+    $txtBackupTargetDir.Size = New-Object System.Drawing.Size(360, 25)
     $txtBackupTargetDir.Text = "C:\Install\Backup\GPO"
 
     $btnBrowseFolder = New-Object System.Windows.Forms.Button
     $btnBrowseFolder.Text = "Durchsuchen..."
-    $btnBrowseFolder.Location = New-Object System.Drawing.Point(655, 11)
-    $btnBrowseFolder.Size = New-Object System.Drawing.Size(125, 30)
+    $btnBrowseFolder.Location = New-Object System.Drawing.Point(510, 11)
+    $btnBrowseFolder.Size = New-Object System.Drawing.Size(105, 30)
+
+    $btnExportBackupCsv = New-Object System.Windows.Forms.Button
+    $btnExportBackupCsv.Text = "CSV Export"
+    $btnExportBackupCsv.Location = New-Object System.Drawing.Point(625, 11)
+    $btnExportBackupCsv.Size = New-Object System.Drawing.Size(95, 30)
+    $btnExportBackupCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
+
+    # HTML Report NUR fuer die in der Tabelle markierte GPO
+    $btnExportSelectedHtml = New-Object System.Windows.Forms.Button
+    $btnExportSelectedHtml.Text = "HTML (Ausgewaehlt)"
+    $btnExportSelectedHtml.Location = New-Object System.Drawing.Point(730, 11)
+    $btnExportSelectedHtml.Size = New-Object System.Drawing.Size(155, 30)
+    $btnExportSelectedHtml.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230)
+
+    # HTML Report fuer alle GPOs der aktuellen Filter-Ansicht
+    $btnExportAllHtml = New-Object System.Windows.Forms.Button
+    $btnExportAllHtml.Text = "HTML (Gefilterte)"
+    $btnExportAllHtml.Location = New-Object System.Drawing.Point(895, 11)
+    $btnExportAllHtml.Size = New-Object System.Drawing.Size(150, 30)
+    $btnExportAllHtml.BackColor = [System.Drawing.Color]::FromArgb(255, 238, 220)
+
+    $lblBackupNote = New-Object System.Windows.Forms.Label
+    $lblBackupNote.Text = "Format: [Zielpfad]\[Name der GPO]\[JJJJMMTT_HHMM]"
+    $lblBackupNote.Location = New-Object System.Drawing.Point(1060, 18)
+    $lblBackupNote.AutoSize = $true
+    $lblBackupNote.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
+
+    # Zeile 2: Ansichts-Filter, Suche & Backup-Aktionen
+    $lblBackupViewFilter = New-Object System.Windows.Forms.Label
+    $lblBackupViewFilter.Text = "Ansicht:"
+    $lblBackupViewFilter.Location = New-Object System.Drawing.Point(12, 58)
+    $lblBackupViewFilter.AutoSize = $true
+    $lblBackupViewFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+
+    $comboBackupFilter = New-Object System.Windows.Forms.ComboBox
+    $comboBackupFilter.Location = New-Object System.Drawing.Point(72, 55)
+    $comboBackupFilter.Size = New-Object System.Drawing.Size(200, 25)
+    $comboBackupFilter.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    [void]$comboBackupFilter.Items.Add("Alle GPOs")
+    [void]$comboBackupFilter.Items.Add("Nur verlinkte GPOs")
+    [void]$comboBackupFilter.Items.Add("Nicht verlinkte GPOs (Unlinked)")
+    $comboBackupFilter.SelectedIndex = 0
+
+    $lblBackupSearch = New-Object System.Windows.Forms.Label
+    $lblBackupSearch.Text = "Suche:"
+    $lblBackupSearch.Location = New-Object System.Drawing.Point(282, 58)
+    $lblBackupSearch.AutoSize = $true
+    $lblBackupSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+
+    $txtBackupSearch = New-Object System.Windows.Forms.TextBox
+    $txtBackupSearch.Location = New-Object System.Drawing.Point(335, 55)
+    $txtBackupSearch.Size = New-Object System.Drawing.Size(140, 25)
 
     $btnLoadGpos = New-Object System.Windows.Forms.Button
     $btnLoadGpos.Text = "GPO-Liste laden"
-    $btnLoadGpos.Location = New-Object System.Drawing.Point(12, 54)
-    $btnLoadGpos.Size = New-Object System.Drawing.Size(140, 34)
+    $btnLoadGpos.Location = New-Object System.Drawing.Point(485, 52)
+    $btnLoadGpos.Size = New-Object System.Drawing.Size(120, 32)
 
     $btnBackupSelected = New-Object System.Windows.Forms.Button
     $btnBackupSelected.Text = "Ausgewaehlte GPO sichern"
-    $btnBackupSelected.Location = New-Object System.Drawing.Point(165, 54)
-    $btnBackupSelected.Size = New-Object System.Drawing.Size(220, 34)
+    $btnBackupSelected.Location = New-Object System.Drawing.Point(615, 52)
+    $btnBackupSelected.Size = New-Object System.Drawing.Size(190, 32)
     $btnBackupSelected.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
     $btnBackupAll = New-Object System.Windows.Forms.Button
     $btnBackupAll.Text = "ALLE GPOs sichern"
-    $btnBackupAll.Location = New-Object System.Drawing.Point(395, 54)
-    $btnBackupAll.Size = New-Object System.Drawing.Size(180, 34)
+    $btnBackupAll.Location = New-Object System.Drawing.Point(815, 52)
+    $btnBackupAll.Size = New-Object System.Drawing.Size(210, 32)
     $btnBackupAll.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230)
-
-    $lblBackupNote = New-Object System.Windows.Forms.Label
-    $lblBackupNote.Text = "Format: [Zielpfad]\[Name der GPO]\[JJJJMMTT_HHMM]"
-    $lblBackupNote.Location = New-Object System.Drawing.Point(590, 63)
-    $lblBackupNote.AutoSize = $true
-    $lblBackupNote.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
 
     $panelBackupTop.Controls.Add($lblTargetPath)
     $panelBackupTop.Controls.Add($txtBackupTargetDir)
     $panelBackupTop.Controls.Add($btnBrowseFolder)
+    $panelBackupTop.Controls.Add($btnExportBackupCsv)
+    $panelBackupTop.Controls.Add($btnExportSelectedHtml)
+    $panelBackupTop.Controls.Add($btnExportAllHtml)
+    $panelBackupTop.Controls.Add($lblBackupNote)
+    $panelBackupTop.Controls.Add($lblBackupViewFilter)
+    $panelBackupTop.Controls.Add($comboBackupFilter)
+    $panelBackupTop.Controls.Add($lblBackupSearch)
+    $panelBackupTop.Controls.Add($txtBackupSearch)
     $panelBackupTop.Controls.Add($btnLoadGpos)
     $panelBackupTop.Controls.Add($btnBackupSelected)
     $panelBackupTop.Controls.Add($btnBackupAll)
-    $panelBackupTop.Controls.Add($lblBackupNote)
 
+    # Dynamischer Hauptbereich in Register 3
     $splitBackupMain = New-Object System.Windows.Forms.SplitContainer
     $splitBackupMain.Dock = [System.Windows.Forms.DockStyle]::Fill
     $splitBackupMain.SplitterDistance = 750
     $splitBackupMain.SplitterWidth = 6
 
+    # Links: GPO-Tabelle
     $panelGpoLeft = New-Object System.Windows.Forms.Panel
     $panelGpoLeft.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelGpoLeft.Padding = New-Object System.Windows.Forms.Padding(10, 8, 4, 10)
@@ -471,12 +551,14 @@ function Show-Tool15 {
     $panelGpoLeft.Controls.Add($lblGpoGrid)
     $splitBackupMain.Panel1.Controls.Add($panelGpoLeft)
 
+    # Rechts: Geteilt in Verknuepfungen (Oben) und Log (Unten)
     $splitBackupRight = New-Object System.Windows.Forms.SplitContainer
     $splitBackupRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $splitBackupRight.Orientation = [System.Windows.Forms.Orientation]::Horizontal
     $splitBackupRight.SplitterDistance = 280
     $splitBackupRight.SplitterWidth = 6
 
+    # Rechts Oben: Verknuepfungen
     $panelLinks = New-Object System.Windows.Forms.Panel
     $panelLinks.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelLinks.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 4)
@@ -505,6 +587,7 @@ function Show-Tool15 {
     $panelLinks.Controls.Add($lblLinks)
     $splitBackupRight.Panel1.Controls.Add($panelLinks)
 
+    # Rechts Unten: Log
     $panelLog = New-Object System.Windows.Forms.Panel
     $panelLog.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelLog.Padding = New-Object System.Windows.Forms.Padding(4, 4, 10, 10)
@@ -545,6 +628,7 @@ function Show-Tool15 {
     $panelCompareTop.BackColor = [System.Drawing.Color]::FromArgb(242, 245, 250)
     $panelCompareTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
+    # Zeile 1: Auswahl GPO 1, GPO 2 und Vergleichen
     $lblGpo1 = New-Object System.Windows.Forms.Label
     $lblGpo1.Text = "GPO 1 (Basis):"
     $lblGpo1.Location = New-Object System.Drawing.Point(12, 16)
@@ -573,6 +657,7 @@ function Show-Tool15 {
     $btnCompare.Size = New-Object System.Drawing.Size(120, 30)
     $btnCompare.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
 
+    # Zeile 2: Filter-Checkbox, CSV-Export & dynamischer Status
     $chkOnlyDiffs = New-Object System.Windows.Forms.CheckBox
     $chkOnlyDiffs.Text = "Nur Unterschiede anzeigen"
     $chkOnlyDiffs.Location = New-Object System.Drawing.Point(12, 52)
@@ -662,7 +747,9 @@ function Show-Tool15 {
 
     # Lokale Datencontainer
     $rawOverviewList = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $rawBackupList   = [System.Collections.Generic.List[PSCustomObject]]::new()
     $gpoLinksCache   = @{}
+    $allGposCache    = [System.Collections.Generic.List[Microsoft.GroupPolicy.Gpo]]::new()
     $rawSettingsList = [System.Collections.Generic.List[PSCustomObject]]::new()
     $rawCompareList  = [System.Collections.Generic.List[PSCustomObject]]::new()
 
@@ -717,6 +804,7 @@ function Show-Tool15 {
 
     Enable-GridSorting -Grid $gridOvMaster
     Enable-GridSorting -Grid $gridOvDetails
+    Enable-GridSorting -Grid $gridGpos
 
     # =========================================================================
     # LOGIK TAB 1: ADSI GPO-Uebersicht & OU-Links
@@ -749,7 +837,7 @@ function Show-Tool15 {
         $lblLegendOverview.Text = "Status: $($arr.Count) von $($rawOverviewList.Count) GPOs  |  [Blau/Lila] Default GPO  |  [Gruen] OK  |  [Rot] Nicht OK"
     }
 
-    $loadOverviewAction = {
+    function Invoke-LoadOverview {
         if ($isClosing -or $form.IsDisposed) { return }
         $lblLegendOverview.Text = "Lade AD-Struktur..."
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
@@ -786,7 +874,7 @@ function Show-Tool15 {
                 }
             } catch {}
 
-            # 2. OU & Domain Verlinkungen
+            # 2. OU & Domain Verlinkungen (Normalisiert auf GUID ohne Klammern)
             $linkRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$domainDN")
             $linkSearcher = [System.DirectoryServices.DirectorySearcher]::new($linkRoot)
             $linkSearcher.Filter = "(|(objectClass=organizationalUnit)(objectClass=domainDNS))"
@@ -798,16 +886,43 @@ function Show-Tool15 {
                 if ($ou.Properties["gplink"]) {
                     $rawGpLink = $ou.Properties["gplink"][0]
                     $targetDN = $ou.Properties["distinguishedname"][0]
-                    $matches = [regex]::Matches($rawGpLink, "cn=({[a-fA-F0-9-]+})", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                    $matches = [regex]::Matches($rawGpLink, "cn=({?[a-fA-F0-9-]+}?)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
                     foreach ($m in $matches) {
-                        $gpoGuid = $m.Groups[1].Value.ToUpper()
-                        if (-not $gpoLinksCache.ContainsKey($gpoGuid)) {
-                            $gpoLinksCache[$gpoGuid] = [System.Collections.Generic.List[string]]::new()
+                        $cleanGuid = $m.Groups[1].Value.Trim('{','}').ToUpper()
+                        if (-not $gpoLinksCache.ContainsKey($cleanGuid)) {
+                            $gpoLinksCache[$cleanGuid] = [System.Collections.Generic.List[string]]::new()
                         }
-                        $gpoLinksCache[$gpoGuid].Add($targetDN)
+                        $gpoLinksCache[$cleanGuid].Add($targetDN)
                     }
                 }
             }
+
+            # 2b. Site-Verlinkungen pruefen
+            try {
+                $configDN = ([ADSI]"LDAP://RootDSE").configurationNamingContext.Value
+                $siteRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=Sites,$configDN")
+                $siteSearcher = [System.DirectoryServices.DirectorySearcher]::new($siteRoot)
+                $siteSearcher.Filter = "(objectClass=site)"
+                $siteSearcher.PropertiesToLoad.AddRange(@("distinguishedName", "gPLink", "name"))
+                $siteResults = $siteSearcher.FindAll()
+                foreach ($site in $siteResults) {
+                    if ($site.Properties["gplink"]) {
+                        $rawGpLink = $site.Properties["gplink"][0]
+                        $targetDN = $site.Properties["distinguishedname"][0]
+                        $matches = [regex]::Matches($rawGpLink, "cn=({?[a-fA-F0-9-]+}?)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                        foreach ($m in $matches) {
+                            $cleanGuid = $m.Groups[1].Value.Trim('{','}').ToUpper()
+                            if (-not $gpoLinksCache.ContainsKey($cleanGuid)) {
+                                $gpoLinksCache[$cleanGuid] = [System.Collections.Generic.List[string]]::new()
+                            }
+                            $gpoLinksCache[$cleanGuid].Add($targetDN)
+                        }
+                    }
+                }
+                $siteResults.Dispose()
+                $siteSearcher.Dispose()
+                $siteRoot.Dispose()
+            } catch {}
 
             # 3. GPO Container
             $gpoRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=Policies,CN=System,$domainDN")
@@ -817,14 +932,15 @@ function Show-Tool15 {
 
             $gpoResults = $gpoSearcher.FindAll()
             foreach ($g in $gpoResults) {
-                $guid = $g.Properties["name"][0].ToUpper()
-                $displayName = if ($g.Properties["displayname"]) { $g.Properties["displayname"][0] } else { $guid }
+                $rawGuid = $g.Properties["name"][0]
+                $cleanGuid = $rawGuid.Trim('{','}').ToUpper()
+                $displayName = if ($g.Properties["displayname"]) { $g.Properties["displayname"][0] } else { "{$cleanGuid}" }
                 $flags = if ($g.Properties["flags"]) { [int]$g.Properties["flags"][0] } else { 0 }
 
                 $userStatus = if (($flags -band 1) -eq 1) { "Deaktiviert" } else { "Aktiviert" }
                 $compStatus = if (($flags -band 2) -eq 2) { "Deaktiviert" } else { "Aktiviert" }
 
-                $isDefaultGPO = ($guid -in @("{31B2F340-016D-11D2-945F-00C04FB984F9}", "{6AC1786C-016F-11D2-945F-00C04FB984F9}")) -or 
+                $isDefaultGPO = ($cleanGuid -in @("31B2F340-016D-11D2-945F-00C04FB984F9", "6AC1786C-016F-11D2-945F-00C04FB984F9")) -or 
                                 ($displayName -match "^Default Domain Policy$" -or $displayName -match "^Default Domain Controllers Policy$")
 
                 $overallStatus = if ($isDefaultGPO) {
@@ -839,18 +955,14 @@ function Show-Tool15 {
                     }
                 }
 
-                $isLinked = $false
-                $linkedCount = 0
-                if ($gpoLinksCache.ContainsKey($guid) -and $gpoLinksCache[$guid].Count -gt 0) {
-                    $isLinked = $true
-                    $linkedCount = $gpoLinksCache[$guid].Count
-                }
+                $isLinked = ($gpoLinksCache.ContainsKey($cleanGuid) -and $gpoLinksCache[$cleanGuid].Count -gt 0)
+                $linkedCount = if ($isLinked) { $gpoLinksCache[$cleanGuid].Count } else { 0 }
 
                 $wmiFilterName = "-"
                 $wmiFilterQuery = "-"
                 if ($g.Properties["gpcwqlfilter"]) {
                     $rawWmi = $g.Properties["gpcwqlfilter"][0]
-                    if ($rawWmi -match "({[a-fA-F0-9-]+})") {
+                    if ($rawWmi -match "({?[a-fA-F0-9-]+}?)") {
                         $wmiGuid = $matches[1]
                         if ($wmiMap.ContainsKey($wmiGuid)) {
                             $wmiFilterName = $wmiMap[$wmiGuid].Name
@@ -871,7 +983,7 @@ function Show-Tool15 {
                     "Computer"      = $compStatus
                     "WMI-Filter"    = $wmiFilterName
                     "WMI Query"     = $wmiFilterQuery
-                    "GUID"          = $guid
+                    "GUID"          = "{$cleanGuid}"
                     "Erstellt am"   = $created
                     "Geaendert am"  = $changed
                 })
@@ -923,7 +1035,7 @@ function Show-Tool15 {
         }
     })
 
-    $btnRefreshOverview.Add_Click($loadOverviewAction)
+    $btnRefreshOverview.Add_Click({ Invoke-LoadOverview })
     $comboViewMode.Add_SelectedIndexChanged({ Update-OverviewDisplay })
     $txtOverviewSearch.Add_TextChanged({ Update-OverviewDisplay })
 
@@ -932,13 +1044,14 @@ function Show-Tool15 {
         if ($gridOvMaster.SelectedRows.Count -gt 0) {
             $selectedRow = $gridOvMaster.SelectedRows[0]
             $guid = [string]$selectedRow.Cells["GUID"].Value
+            $cleanGuid = $guid.Trim('{','}').ToUpper()
             $gName = [string]$selectedRow.Cells["GPO Name"].Value
 
             $lblOvDetailsTitle.Text = "Verlinkungsziele fuer:`r`n[$gName]"
 
             $arrDetails = [System.Collections.ArrayList]::new()
-            if ($guid -and $gpoLinksCache.ContainsKey($guid) -and $gpoLinksCache[$guid].Count -gt 0) {
-                foreach ($dn in $gpoLinksCache[$guid]) {
+            if ($cleanGuid -and $gpoLinksCache.ContainsKey($cleanGuid) -and $gpoLinksCache[$cleanGuid].Count -gt 0) {
+                foreach ($dn in $gpoLinksCache[$cleanGuid]) {
                     $type = "Organizational Unit (OU)"
                     $simpleName = $dn
                     if ($dn -match "^OU=([^,]+)") {
@@ -947,6 +1060,9 @@ function Show-Tool15 {
                     } elseif ($dn -match "^DC=") {
                         $type = "Domaenen-Root"
                         $simpleName = $domainName
+                    } elseif ($dn -match "^CN=([^,]+),CN=Sites") {
+                        $type = "Active Directory Site"
+                        $simpleName = $matches[1]
                     }
                     [void]$arrDetails.Add([PSCustomObject]@{
                         "Typ"                = $type
@@ -980,8 +1096,8 @@ function Show-Tool15 {
         $csvFile = Join-Path $targetBase "GPO_Overview_Export_${dateStr}_${timeStr}.csv"
 
         $enriched = foreach ($row in @($gridOvMaster.DataSource)) {
-            $gGuid = $row.GUID
-            $linksStr = if ($gpoLinksCache.ContainsKey($gGuid)) { ($gpoLinksCache[$gGuid] -join " | ") } else { "Keine" }
+            $cleanGuid = [string]$row.GUID.Trim('{','}').ToUpper()
+            $linksStr = if ($gpoLinksCache.ContainsKey($cleanGuid)) { ($gpoLinksCache[$cleanGuid] -join " | ") } else { "Keine" }
             [PSCustomObject]@{
                 "GPO Name"         = $row."GPO Name"
                 "Gesamt-Status"    = $row."Gesamt-Status"
@@ -1014,8 +1130,7 @@ function Show-Tool15 {
 
         [xml]$xml = Get-GPOReport -Guid $GpoId -ReportType Xml -ErrorAction Stop
 
-        $parseSection = {
-            param($sectionNode, $scope)
+        function Parse-GpoSection ($sectionNode, $scope) {
             if ($null -eq $sectionNode -or -not $sectionNode.ExtensionData) { return }
 
             foreach ($ext in $sectionNode.ExtensionData.Extension) {
@@ -1067,7 +1182,7 @@ function Show-Tool15 {
                             if ($extractedList.Count -gt 0) {
                                 $joinedVals = $extractedList -join ", "
                                 if (-not [string]::IsNullOrWhiteSpace($optLabel) -and $optLabel -ne $joinedVals) {
-                                    $paramValues += "$($optLabel): $joinedVals"
+                                    $paramValues += "$($optLabel): $($joinedVals)"
                                 } else {
                                     $paramValues += "$joinedVals"
                                 }
@@ -1287,15 +1402,48 @@ function Show-Tool15 {
             }
         }
 
-        & $parseSection $xml.GPO.Computer "Computer"
-        & $parseSection $xml.GPO.User "User"
+        Parse-GpoSection $xml.GPO.Computer "Computer"
+        Parse-GpoSection $xml.GPO.User "User"
 
         return $list
     }
 
     # =========================================================================
-    # LOGIK TAB 2: GPO Settings Inspector
+    # LOGIK TAB 2: GPO Settings Inspector & Filter-Steuerung (Exakter Sync)
     # =========================================================================
+    function Update-SettingsGpoDropdown {
+        if ($isClosing -or $form.IsDisposed -or $comboGpo.IsDisposed) { return }
+        $mode = $comboSettingsViewMode.SelectedItem
+
+        $matchingGpos = $allGposCache | Where-Object {
+            $cleanGuid = $_.Id.ToString().Trim('{','}').ToUpper()
+            $isLinked = ($gpoLinksCache.ContainsKey($cleanGuid) -and $gpoLinksCache[$cleanGuid].Count -gt 0)
+            switch ($mode) {
+                "Nur verlinkte GPOs"              { $isLinked }
+                "Nicht verlinkte GPOs (Unlinked)" { -not $isLinked }
+                default                           { $true }
+            }
+        }
+
+        $comboGpo.Items.Clear()
+        $summaryLabel = switch ($mode) {
+            "Nur verlinkte GPOs"              { "-- ALLE verlinkten GPOs laden ($($matchingGpos.Count)) --" }
+            "Nicht verlinkte GPOs (Unlinked)" { "-- ALLE ungelinkten GPOs laden ($($matchingGpos.Count)) --" }
+            default                           { "-- ALLE GPOs laden ($($matchingGpos.Count)) --" }
+        }
+
+        [void]$comboGpo.Items.Add($summaryLabel)
+        foreach ($g in $matchingGpos) {
+            [void]$comboGpo.Items.Add($g.DisplayName)
+        }
+
+        if ($comboGpo.Items.Count -gt 0) {
+            $comboGpo.SelectedIndex = 0
+        }
+    }
+
+    $comboSettingsViewMode.Add_SelectedIndexChanged({ Update-SettingsGpoDropdown })
+
     function Update-SettingsGridDisplay {
         if ($isClosing -or $form.IsDisposed -or $gridSettings.IsDisposed) { return }
         $filterText = $txtFilter.Text.Trim()
@@ -1335,19 +1483,29 @@ function Show-Tool15 {
         }
     }
 
-    $loadSettingsAction = {
+    function Invoke-LoadSettings {
         if ($isClosing -or $form.IsDisposed) { return }
-        $selectedGpoName = $comboGpo.SelectedItem
-        if ([string]::IsNullOrWhiteSpace($selectedGpoName)) { return }
+        $selectedOption = $comboGpo.SelectedItem
+        if ([string]::IsNullOrWhiteSpace($selectedOption)) { return }
 
         $lblSettingsStatus.Text = "Lese Einstellungen ein..."
         $form.Refresh()
 
         $rawSettingsList.Clear()
 
-        if ($selectedGpoName -eq "-- ALLE GPOs laden --") {
-            $gpoList = Get-GPO -All
-            foreach ($g in $gpoList) {
+        if ($selectedOption.StartsWith("-- ALLE")) {
+            $mode = $comboSettingsViewMode.SelectedItem
+            $targetGpos = $allGposCache | Where-Object {
+                $cleanGuid = $_.Id.ToString().Trim('{','}').ToUpper()
+                $isLinked = ($gpoLinksCache.ContainsKey($cleanGuid) -and $gpoLinksCache[$cleanGuid].Count -gt 0)
+                switch ($mode) {
+                    "Nur verlinkte GPOs"              { $isLinked }
+                    "Nicht verlinkte GPOs (Unlinked)" { -not $isLinked }
+                    default                           { $true }
+                }
+            }
+
+            foreach ($g in $targetGpos) {
                 try {
                     $items = Get-ParsedGpoSettings -GpoId $g.Id -GpoDisplayName $g.DisplayName
                     foreach ($item in $items) { $rawSettingsList.Add($item) }
@@ -1355,9 +1513,11 @@ function Show-Tool15 {
             }
         } else {
             try {
-                $gpo = Get-GPO -Name $selectedGpoName -ErrorAction Stop
-                $items = Get-ParsedGpoSettings -GpoId $gpo.Id -GpoDisplayName $gpo.DisplayName
-                foreach ($item in $items) { $rawSettingsList.Add($item) }
+                $gpo = $allGposCache | Where-Object { $_.DisplayName -eq $selectedOption } | Select-Object -First 1
+                if ($gpo) {
+                    $items = Get-ParsedGpoSettings -GpoId $gpo.Id -GpoDisplayName $gpo.DisplayName
+                    foreach ($item in $items) { $rawSettingsList.Add($item) }
+                }
             } catch {
                 [System.Windows.Forms.MessageBox]::Show("Fehler beim Abruf: $_", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
             }
@@ -1366,7 +1526,7 @@ function Show-Tool15 {
         Update-SettingsGridDisplay
     }
 
-    $btnLoadSettings.Add_Click($loadSettingsAction)
+    $btnLoadSettings.Add_Click({ Invoke-LoadSettings })
     $txtFilter.Add_TextChanged({ Update-SettingsGridDisplay })
 
     $gridSettings.Add_SelectionChanged({
@@ -1406,7 +1566,7 @@ function Show-Tool15 {
     })
 
     # =========================================================================
-    # LOGIK TAB 3: GPO Backup & Audit
+    # LOGIK TAB 3: GPO Backup & Audit (Mit getrenntem HTML-Export)
     # =========================================================================
     $btnBrowseFolder.Add_Click({
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -1417,27 +1577,70 @@ function Show-Tool15 {
         }
     })
 
-    $loadGposAction = {
+    function Update-BackupGridDisplay {
         if ($isClosing -or $form.IsDisposed -or $gridGpos.IsDisposed) { return }
-        $gridGpos.DataSource = $null
-        $tableGpos = New-Object System.Data.DataTable
-        [void]$tableGpos.Columns.Add("GPO Name")
-        [void]$tableGpos.Columns.Add("Status")
-        [void]$tableGpos.Columns.Add("Verknuepft")
-        [void]$tableGpos.Columns.Add("GPO ID (GUID)")
+        $mode = $comboBackupFilter.SelectedItem
+        $filterText = $txtBackupSearch.Text.Trim()
 
-        $allGpos = Get-GPO -All | Sort-Object DisplayName
-        foreach ($g in $allGpos) {
-            $report = [xml](Get-GPOReport -Guid $g.Id -ReportType Xml)
-            $linkCount = @($report.GPO.LinksTo).Count
-            $isLinked = if ($linkCount -gt 0) { "JA ($linkCount)" } else { "NEIN (Unlinked)" }
-
-            [void]$tableGpos.Rows.Add($g.DisplayName, $g.GpoStatus, $isLinked, $g.Id.ToString())
+        $filtered = $rawBackupList | Where-Object {
+            $item = $_
+            $matchMode = switch ($mode) {
+                "Nur verlinkte GPOs"              { $item."Link-Anzahl" -gt 0 }
+                "Nicht verlinkte GPOs (Unlinked)" { $item."Link-Anzahl" -eq 0 }
+                default                           { $true }
+            }
+            $matchSearch = if ([string]::IsNullOrWhiteSpace($filterText)) { $true } else {
+                $item."GPO Name" -like "*$filterText*" -or $item."Status" -like "*$filterText*" -or $item."GPO ID (GUID)" -like "*$filterText*"
+            }
+            $matchMode -and $matchSearch
         }
-        $gridGpos.DataSource = $tableGpos
+
+        $arr = [System.Collections.ArrayList]::new()
+        foreach ($it in $filtered) { [void]$arr.Add($it) }
+        $gridGpos.DataSource = $arr
+
+        if ($gridGpos.Columns["Link-Anzahl"]) {
+            $gridGpos.Columns["Link-Anzahl"].Visible = $false
+        }
+
+        if ($mode -ne "Alle GPOs" -or (-not [string]::IsNullOrWhiteSpace($filterText))) {
+            $btnBackupAll.Text = "Gefilterte GPOs sichern ($($arr.Count))"
+            $btnExportAllHtml.Text = "HTML (Gefilterte: $($arr.Count))"
+        } else {
+            $btnBackupAll.Text = "ALLE GPOs sichern ($($arr.Count))"
+            $btnExportAllHtml.Text = "HTML (Alle: $($arr.Count))"
+        }
+
+        $lblGpoGrid.Text = "1. Gruppenrichtlinien der Domaene ($($arr.Count) angezeigt):"
     }
 
-    $btnLoadGpos.Add_Click($loadGposAction)
+    $comboBackupFilter.Add_SelectedIndexChanged({ Update-BackupGridDisplay })
+    $txtBackupSearch.Add_TextChanged({ Update-BackupGridDisplay })
+
+    function Invoke-LoadGpos {
+        if ($isClosing -or $form.IsDisposed -or $gridGpos.IsDisposed) { return }
+        $gridGpos.DataSource = $null
+        $rawBackupList.Clear()
+
+        foreach ($g in $allGposCache) {
+            $cleanGuid = $g.Id.ToString().Trim('{','}').ToUpper()
+            $isLinked = ($gpoLinksCache.ContainsKey($cleanGuid) -and $gpoLinksCache[$cleanGuid].Count -gt 0)
+            $linkCount = if ($isLinked) { $gpoLinksCache[$cleanGuid].Count } else { 0 }
+            $isLinkedText = if ($linkCount -gt 0) { "JA ($linkCount)" } else { "NEIN (Unlinked)" }
+
+            $rawBackupList.Add([PSCustomObject]@{
+                "GPO Name"      = $g.DisplayName
+                "Status"        = $g.GpoStatus.ToString()
+                "Verknuepft"    = $isLinkedText
+                "Link-Anzahl"   = $linkCount
+                "GPO ID (GUID)" = $g.Id.ToString()
+            })
+        }
+
+        Update-BackupGridDisplay
+    }
+
+    $btnLoadGpos.Add_Click({ Invoke-LoadGpos })
 
     $gridGpos.Add_SelectionChanged({
         if ($isClosing -or $form.IsDisposed -or $gridGpos.IsDisposed -or $gridLinks.IsDisposed) { return }
@@ -1454,8 +1657,10 @@ function Show-Tool15 {
             try {
                 $report = [xml](Get-GPOReport -Guid $guid -ReportType Xml)
                 $links = $report.GPO.LinksTo
-                if ($links) {
-                    foreach ($l in $links) {
+                $validLinks = @($links) | Where-Object { $null -ne $_ -and (-not [string]::IsNullOrWhiteSpace($_.SOMPath)) }
+
+                if ($validLinks -and @($validLinks).Count -gt 0) {
+                    foreach ($l in $validLinks) {
                         [void]$tableLinks.Rows.Add($l.SOMPath, $l.Enabled, $l.NoOverride)
                     }
                 } else {
@@ -1480,6 +1685,7 @@ function Show-Tool15 {
         $txtPath = Join-Path $targetPath "GPO_Link_Info.txt"
         $report = [xml](Get-GPOReport -Guid $gpoGuid -ReportType Xml)
         $links = $report.GPO.LinksTo
+        $validLinks = @($links) | Where-Object { $null -ne $_ -and (-not [string]::IsNullOrWhiteSpace($_.SOMPath)) }
         $timeFormatted = Get-Date -Format "dd.MM.yyyy HH:mm:ss"
 
         "==================================================" | Out-File -FilePath $txtPath -Encoding UTF8
@@ -1490,9 +1696,9 @@ function Show-Tool15 {
         "Zeitpunkt       : $timeFormatted"                    | Out-File -FilePath $txtPath -Append -Encoding UTF8
         "Ziel-Ordner     : $targetPath"                       | Out-File -FilePath $txtPath -Append -Encoding UTF8
         "--------------------------------------------------" | Out-File -FilePath $txtPath -Append -Encoding UTF8
-        if ($links) {
+        if ($validLinks -and @($validLinks).Count -gt 0) {
             "Verknuepfungen:" | Out-File -FilePath $txtPath -Append -Encoding UTF8
-            foreach ($l in $links) {
+            foreach ($l in $validLinks) {
                 " - Ziel (SOM): $($l.SOMPath) | Aktiv: $($l.Enabled) | Enforced: $($l.NoOverride)" | Out-File -FilePath $txtPath -Append -Encoding UTF8
             }
         } else {
@@ -1533,22 +1739,134 @@ function Show-Tool15 {
             return
         }
 
-        $allGpos = Get-GPO -All
-        $confirm = [System.Windows.Forms.MessageBox]::Show("Moechten Sie wirklich alle $($allGpos.Count) Gruppenrichtlinien nach '$basePath' sichern?", "Bestaetigung", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+        $targetItems = @($gridGpos.DataSource)
+        if ($null -eq $targetItems -or $targetItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Keine GPOs in der aktuellen Ansicht zum Sichern vorhanden.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return
+        }
+
+        $filterMode = $comboBackupFilter.SelectedItem
+        $confirmMsg = "Moechten Sie wirklich die $($targetItems.Count) Richtlinien der aktuellen Ansicht ('$filterMode') nach '$basePath' sichern?"
+        $confirm = [System.Windows.Forms.MessageBox]::Show($confirmMsg, "Bestaetigung Sicherung", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
         if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) { return }
 
-        $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === Starte Gesamtsicherung aller $($allGpos.Count) GPOs ===`r`n")
+        $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === Starte Sicherung von $($targetItems.Count) GPOs ('$filterMode') ===`r`n")
         $form.Refresh()
 
-        foreach ($g in $allGpos) {
+        foreach ($g in $targetItems) {
             try {
-                Backup-SingleGPOWithLog -gpoGuid $g.Id -gpoName $g.DisplayName -basePath $basePath
+                Backup-SingleGPOWithLog -gpoGuid $g."GPO ID (GUID)" -gpoName $g."GPO Name" -basePath $basePath
             } catch {
-                $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [FEHLER] bei '$($g.DisplayName)': $_`r`n")
+                $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [FEHLER] bei '$($g."GPO Name")': $_`r`n")
             }
         }
-        $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === Gesamtsicherung abgeschlossen! ===`r`n")
-        [System.Windows.Forms.MessageBox]::Show("Gesamtsicherung aller $($allGpos.Count) GPOs abgeschlossen!", "Fertig", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === Sicherung abgeschlossen! ===`r`n")
+        [System.Windows.Forms.MessageBox]::Show("Sicherung von $($targetItems.Count) GPOs erfolgreich abgeschlossen!", "Fertig", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    })
+
+    $btnExportBackupCsv.Add_Click({
+        $targetItems = @($gridGpos.DataSource)
+        if ($null -eq $targetItems -or $targetItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Keine Daten zum Exportieren vorhanden.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return
+        }
+
+        $targetBase = $txtBackupTargetDir.Text.Trim()
+        if ([string]::IsNullOrWhiteSpace($targetBase)) { $targetBase = "C:\Install\Backup\GPO" }
+        if (-not (Test-Path $targetBase)) { New-Item -ItemType Directory -Path $targetBase -Force | Out-Null }
+
+        $dateStr = Get-Date -Format "yyyyMMdd"
+        $timeStr = Get-Date -Format "HHmm"
+        $csvFile = Join-Path $targetBase "GPO_Backup_List_${dateStr}_${timeStr}.csv"
+
+        $targetItems | Export-Csv -Path $csvFile -Delimiter ";" -NoTypeInformation -Encoding UTF8
+        [System.Windows.Forms.MessageBox]::Show("GPO-Liste erfolgreich exportiert!`n`nPfad: $csvFile", "Export abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    })
+
+    # HTML Report NUR fuer die markierte GPO
+    $btnExportSelectedHtml.Add_Click({
+        $targetBase = $txtBackupTargetDir.Text.Trim()
+        if ([string]::IsNullOrWhiteSpace($targetBase)) { $targetBase = "C:\Install\Backup\GPO" }
+        if (-not (Test-Path $targetBase)) { New-Item -ItemType Directory -Path $targetBase -Force | Out-Null }
+
+        if ($gridGpos.SelectedRows.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Bitte waehlen Sie eine GPO aus der Tabelle aus.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return
+        }
+
+        $selectedItem = $gridGpos.SelectedRows[0].DataBoundItem
+        $gpoName = $selectedItem."GPO Name"
+        $guid = $selectedItem."GPO ID (GUID)"
+        $safeName = $gpoName -replace '[\\/:*?"<>|]', '_'
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmm"
+
+        $htmlDir = Join-Path $targetBase "HTML_Reports"
+        if (-not (Test-Path $htmlDir)) { New-Item -ItemType Directory -Path $htmlDir -Force | Out-Null }
+
+        $htmlFile = Join-Path $htmlDir "${safeName}_${timestamp}.html"
+        try {
+            Get-GPOReport -Guid $guid -ReportType Html -Path $htmlFile -ErrorAction Stop
+            $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [OK] HTML-Bericht fuer '$gpoName' erstellt: $htmlFile`r`n")
+            $openChoice = [System.Windows.Forms.MessageBox]::Show("HTML-Bericht fuer '$gpoName' erfolgreich erstellt!`n`nPfad: $htmlFile`n`nMoechten Sie den Bericht jetzt im Browser oeffnen?", "HTML Export", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Information)
+            if ($openChoice -eq [System.Windows.Forms.DialogResult]::Yes) {
+                Start-Process -FilePath $htmlFile
+            }
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("Fehler beim Erstellen des HTML-Berichts: $_", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+        }
+    })
+
+    # HTML Report fuer alle GPOs der aktuellen Filter-Ansicht
+    $btnExportAllHtml.Add_Click({
+        $targetBase = $txtBackupTargetDir.Text.Trim()
+        if ([string]::IsNullOrWhiteSpace($targetBase)) { $targetBase = "C:\Install\Backup\GPO" }
+        if (-not (Test-Path $targetBase)) { New-Item -ItemType Directory -Path $targetBase -Force | Out-Null }
+
+        $displayedItems = @($gridGpos.DataSource)
+        if ($null -eq $displayedItems -or $displayedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Keine GPOs in der aktuellen Ansicht zum Exportieren vorhanden.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return
+        }
+
+        $filterMode = $comboBackupFilter.SelectedItem
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmm"
+
+        $confirm = [System.Windows.Forms.MessageBox]::Show("Moechten Sie fuer alle $($displayedItems.Count) GPOs der aktuellen Ansicht ('$filterMode') jeweils einen HTML-Bericht erstellen?", "HTML Massenexport", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+        if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+
+        $modeFolder = switch ($filterMode) {
+            "Nicht verlinkte GPOs (Unlinked)" { "Unlinked" }
+            "Nur verlinkte GPOs"              { "Linked" }
+            default                           { "All" }
+        }
+
+        $htmlDir = Join-Path $targetBase "GPO_HTML_Reports_${modeFolder}_${timestamp}"
+        if (-not (Test-Path $htmlDir)) { New-Item -ItemType Directory -Path $htmlDir -Force | Out-Null }
+
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === Starte HTML-Massenexport fuer $($displayedItems.Count) GPOs ('$filterMode') ===`r`n")
+        $form.Refresh()
+
+        $exportedCount = 0
+        foreach ($item in $displayedItems) {
+            try {
+                $safeName = $item."GPO Name" -replace '[\\/:*?"<>|]', '_'
+                $guid = $item."GPO ID (GUID)"
+                $htmlFile = Join-Path $htmlDir "${safeName}.html"
+                Get-GPOReport -Guid $guid -ReportType Html -Path $htmlFile -ErrorAction Stop
+                $exportedCount++
+            } catch {
+                $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [FEHLER] HTML fuer '$($item.'GPO Name')': $_`r`n")
+            }
+        }
+
+        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === $exportedCount HTML-Berichte erfolgreich erstellt in: $htmlDir ===`r`n")
+
+        $openChoice = [System.Windows.Forms.MessageBox]::Show("$exportedCount HTML-Berichte erfolgreich erstellt!`n`nOrdner: $htmlDir`n`nMoechten Sie den Ordner im Explorer oeffnen?", "HTML Massenexport abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Information)
+        if ($openChoice -eq [System.Windows.Forms.DialogResult]::Yes) {
+            Start-Process -FilePath "explorer.exe" -ArgumentList $htmlDir
+        }
     })
 
     # =========================================================================
@@ -1764,25 +2082,31 @@ function Show-Tool15 {
         $txtBackupTargetDir.SelectionStart = 0
         $txtBackupTargetDir.SelectionLength = 0
 
-        $comboGpo.Items.Clear()
+        # Alle GPOs einmalig cachen
+        $allGposCache.Clear()
+        $gpos = Get-GPO -All | Sort-Object DisplayName
+        foreach ($g in $gpos) { [void]$allGposCache.Add($g) }
+
+        # Dropdowns fuer Tab 4 befuellen
         $comboGpo1.Items.Clear()
         $comboGpo2.Items.Clear()
-
-        [void]$comboGpo.Items.Add("-- ALLE GPOs laden --")
-        $allGpos = Get-GPO -All | Sort-Object DisplayName
-        foreach ($g in $allGpos) {
-            [void]$comboGpo.Items.Add($g.DisplayName)
+        foreach ($g in $allGposCache) {
             [void]$comboGpo1.Items.Add($g.DisplayName)
             [void]$comboGpo2.Items.Add($g.DisplayName)
         }
 
-        if ($comboGpo.Items.Count -gt 1) { $comboGpo.SelectedIndex = 1 }
         if ($comboGpo1.Items.Count -gt 0) { $comboGpo1.SelectedIndex = 0 }
         if ($comboGpo2.Items.Count -gt 1) { $comboGpo2.SelectedIndex = 1 }
 
-        & $loadOverviewAction
-        & $loadSettingsAction
-        & $loadGposAction
+        # Register 1 laden (baut $gpoLinksCache exakt auf)
+        Invoke-LoadOverview
+
+        # Register 2 initialisieren (synchronisiert auf die 13 ungelinkten GPOs)
+        Update-SettingsGpoDropdown
+        Invoke-LoadSettings
+
+        # Register 3 initialisieren (synchronisiert auf dieselben 13 ungelinkten GPOs)
+        Invoke-LoadGpos
     })
 
     $form.Add_FormClosing({
