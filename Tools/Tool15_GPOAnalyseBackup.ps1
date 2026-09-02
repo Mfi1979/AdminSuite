@@ -1,7 +1,7 @@
 <#
 ==================================================================================
  Tool 15: Active Directory GPO Enterprise Suite
- Version: 1.5.8 (Grosse Registerschrift, dynamischer Titelumbruch, ISE-Safe)
+ Version: 1.5.9 (Lade-Reihenfolge korrigiert, Multi-DPI, ISE-Safe)
  
  Register 1: GPO Uebersicht & Verlinkungs-Analyse
              - Schnelle ADSI/LDAP-Abfrage aller GPOs, WMI-Filter & OU-Verlinkungen
@@ -31,18 +31,23 @@
              - Einzeilige Spaltenkoepfe mit fester Mindestbreite
              - 2 beliebige GPOs gegeneinander vergleichen
              - Spalten: Bereich, Kategorie, Einstellung, Status GPO 1, Wert GPO 1, Status GPO 2, Wert GPO 2, Diff-Status
-             - Erkennt Parameter- & Zahlenwert-Abweichungen (Gelb/Orange)
+             - Parameter- & Zahlenwert-Erkennung
              - Identische Einstellungen vollstaendig in GRUEN
 ==================================================================================
 #>
 
-[System.Windows.Forms.Application]::EnableVisualStyles()
+# 1. Assemblies zuerst laden
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.DirectoryServices
 Import-Module GroupPolicy -ErrorAction Stop
 
-$script:ToolVersion = "v1.5.8"
+# 2. VisualStyles erst nach geladener Assembly initialisieren
+try {
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+} catch {}
+
+$script:ToolVersion = "v1.5.9"
 
 function Show-Tool15 {
     [CmdletBinding()]
@@ -195,7 +200,7 @@ function Show-Tool15 {
     $panelOvLeft.Controls.Add($lblOvMasterTitle)
     $splitOverview.Panel1.Controls.Add($panelOvLeft)
 
-    # Rechte Seite Tab 1 (Mit 46px Hoehe fuer 2 Zeilen Textumbruch)
+    # Rechte Seite Tab 1
     $panelOvRight = New-Object System.Windows.Forms.Panel
     $panelOvRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelOvRight.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 10)
@@ -384,7 +389,6 @@ function Show-Tool15 {
     $panelBackupTop.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
     $panelBackupTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
-    # Zeile 1: Pfad & Durchsuchen
     $lblTargetPath = New-Object System.Windows.Forms.Label
     $lblTargetPath.Text = "Backup Ziel-Pfad:"
     $lblTargetPath.Location = New-Object System.Drawing.Point(12, 17)
@@ -401,7 +405,6 @@ function Show-Tool15 {
     $btnBrowseFolder.Location = New-Object System.Drawing.Point(655, 11)
     $btnBrowseFolder.Size = New-Object System.Drawing.Size(125, 30)
 
-    # Zeile 2: Aktionen & Buttons
     $btnLoadGpos = New-Object System.Windows.Forms.Button
     $btnLoadGpos.Text = "GPO-Liste laden"
     $btnLoadGpos.Location = New-Object System.Drawing.Point(12, 54)
@@ -433,13 +436,11 @@ function Show-Tool15 {
     $panelBackupTop.Controls.Add($btnBackupAll)
     $panelBackupTop.Controls.Add($lblBackupNote)
 
-    # Dynamischer Hauptbereich in Register 3
     $splitBackupMain = New-Object System.Windows.Forms.SplitContainer
     $splitBackupMain.Dock = [System.Windows.Forms.DockStyle]::Fill
     $splitBackupMain.SplitterDistance = 750
     $splitBackupMain.SplitterWidth = 6
 
-    # Links: GPO-Tabelle
     $panelGpoLeft = New-Object System.Windows.Forms.Panel
     $panelGpoLeft.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelGpoLeft.Padding = New-Object System.Windows.Forms.Padding(10, 8, 4, 10)
@@ -470,14 +471,12 @@ function Show-Tool15 {
     $panelGpoLeft.Controls.Add($lblGpoGrid)
     $splitBackupMain.Panel1.Controls.Add($panelGpoLeft)
 
-    # Rechts: Geteilt in Verknuepfungen (Oben) und Log (Unten)
     $splitBackupRight = New-Object System.Windows.Forms.SplitContainer
     $splitBackupRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $splitBackupRight.Orientation = [System.Windows.Forms.Orientation]::Horizontal
     $splitBackupRight.SplitterDistance = 280
     $splitBackupRight.SplitterWidth = 6
 
-    # Rechts Oben: Verknuepfungen
     $panelLinks = New-Object System.Windows.Forms.Panel
     $panelLinks.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelLinks.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 4)
@@ -506,7 +505,6 @@ function Show-Tool15 {
     $panelLinks.Controls.Add($lblLinks)
     $splitBackupRight.Panel1.Controls.Add($panelLinks)
 
-    # Rechts Unten: Log
     $panelLog = New-Object System.Windows.Forms.Panel
     $panelLog.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelLog.Padding = New-Object System.Windows.Forms.Padding(4, 4, 10, 10)
@@ -547,7 +545,6 @@ function Show-Tool15 {
     $panelCompareTop.BackColor = [System.Drawing.Color]::FromArgb(242, 245, 250)
     $panelCompareTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
-    # Zeile 1: Auswahl GPO 1, GPO 2 und Vergleichen
     $lblGpo1 = New-Object System.Windows.Forms.Label
     $lblGpo1.Text = "GPO 1 (Basis):"
     $lblGpo1.Location = New-Object System.Drawing.Point(12, 16)
@@ -576,7 +573,6 @@ function Show-Tool15 {
     $btnCompare.Size = New-Object System.Drawing.Size(120, 30)
     $btnCompare.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
 
-    # Zeile 2: Filter-Checkbox, CSV-Export & dynamischer Status
     $chkOnlyDiffs = New-Object System.Windows.Forms.CheckBox
     $chkOnlyDiffs.Text = "Nur Unterschiede anzeigen"
     $chkOnlyDiffs.Location = New-Object System.Drawing.Point(12, 52)
@@ -1071,7 +1067,7 @@ function Show-Tool15 {
                             if ($extractedList.Count -gt 0) {
                                 $joinedVals = $extractedList -join ", "
                                 if (-not [string]::IsNullOrWhiteSpace($optLabel) -and $optLabel -ne $joinedVals) {
-                                    $paramValues += "$($optLabel): $($joinedVals)"
+                                    $paramValues += "$($optLabel): $joinedVals"
                                 } else {
                                     $paramValues += "$joinedVals"
                                 }
