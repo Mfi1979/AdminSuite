@@ -1,44 +1,34 @@
 <#
 ==================================================================================
  Tool 15: Active Directory GPO Enterprise Suite
- Version: 1.7.0 (Snapshot Save/Load, Live-Fortschrittsbalken, ISE-Safe, ASCII)
+ Version: 1.7.4 (Lazy Loading, DDP-Integritaetswarnung, Pfad in Tab 2, ISE-Safe)
  
  Register 1: GPO Uebersicht & Verlinkungs-Analyse
-             - Button "GPOs einlesen" mit Fortschrittsbalken und Live-Status
+             - Button "GPOs einlesen" mit Live-Fortschrittsbalken & Statustext
+             - Automatische Erkennung & Warnung bei DDP-Namensduplikaten / Umbenennung
              - Buttons "Snapshot speichern" & "Snapshot laden" (.gposnap)
              - Schnelle ADSI/LDAP-Abfrage aller GPOs, WMI-Filter & OU-Verlinkungen
-             - Spaltenbreiten automatisch an Inhalt angepasst (AllCells)
-             - Spaltenbezeichnungen "Benutzer" und "Computer"
-             - Farbliche Kennzeichnung:
-               * [Blau/Lila] Default Domain Policy & Default Domain Controllers Policy
-               * [Gruen] OK (Nur Computer aktiv ODER nur Benutzer aktiv)
-               * [Rot] Nicht OK (Beide aktiviert oder vollstaendig deaktiviert)
-             - Klickbare Spaltensortierung auf allen Spalten
-             - Master-Detail: Zeigt rechts alle Verlinkungsziele (OUs/Domaene)
-             - 2-zeiliger Titelbereich (kein Abschneiden langer GPO-Namen)
+             - Farbliche Kennzeichnung (Default GPO / Warnung / OK / Nicht OK)
+             - Master-Detail: Zeigt rechts alle Verlinkungsziele (OUs/Domaene/Sites)
  
  Register 2: GPO Richtlinien-Einstellungen & Inspektor
-             - Synchronisierter Ansichts-Filter (Exakte Erkennung ungelinkter GPOs)
-             - Sammel-Laden & CSV-Export aller gefilterten GPOs
-             - Vollstaendige Richtlinienerklaerung rechts im Detailbereich
+             - Sichtbarer Export-Zielpfad mit Durchsuchen-Dialog
+             - Vollstaendiger 6-Komponenten-XML-Parser (ADMX, Services, GPP, Security, Rights, Reg)
+             - Synchronisierter Ansichts-Filter (Alle / Nur verlinkte / Unlinked)
+             - Lazy Loading (startet sofort ohne Hänger)
  
  Register 3: GPO Backup & Verknuepfungs-Audit
+             - Schnelle Bestandsliste ueber LDAP-Cache (kein Netzwerk-Freeze mehr)
              - HTML (Ausgewaehlt): HTML-Bericht der markierten GPO erstellen & oeffnen
              - HTML (Gefilterte): HTML-Massenexport aller gefilterten GPOs in Unterordner
              - Ansichts-Filter: Alle / Nur verlinkte / Nicht verlinkte (Unlinked)
-             - Live-Suchfeld fuer schnelle GPO-Filterung
-             - Selektives Backup (z.B. nur ungelinkte GPOs sichern)
-             - CSV-Export fuer Bestandsliste
-             - Voll-dynamisches SplitContainer-Layout
-             - Erstellung von 'GPO_Link_Info.txt' pro GPO-Backup
+             - Selektives Backup (z.B. nur alle 13 ungelinkten GPOs sichern)
  
- Register 4: GPO-Vergleich (Diff)
-             - Entzerrte 2-Zeilen-Kopfleiste (keine Ueberlagerungen)
-             - Einzeilige Spaltenkoepfe mit fester Mindestbreite
+ Register 4: GPO-Vergleich (Diff) & DDP-Baseline-Check
+             - Button "DDP vs. MS-Standard" fuer 1-Klick Soll/Ist-Vergleich
+             - Integrierte Microsoft Werkszustand-Referenz (14 Kontorichtlinien)
+             - Intelligente Normalisierung deutscher & englischer Richtliniennamen
              - 2 beliebige GPOs gegeneinander vergleichen
-             - Spalten: Bereich, Kategorie, Einstellung, Status GPO 1, Wert GPO 1, Status GPO 2, Wert GPO 2, Diff-Status
-             - Parameter- & Zahlenwert-Erkennung
-             - Identische Einstellungen vollstaendig in GRUEN
 ==================================================================================
 #>
 
@@ -53,7 +43,10 @@ try {
     [System.Windows.Forms.Application]::EnableVisualStyles()
 } catch {}
 
-$script:ToolVersion = "v1.7.0"
+$script:ToolVersion = "v1.7.4"
+$script:StandardDdpGuid = "31B2F340-016D-11D2-945F-00C04FB984F9"
+$script:StandardDdcpGuid = "6AC1786C-016F-11D2-945F-00C04FB984F9"
+$script:DdpBaselineName = "[Referenz] Microsoft Default Domain Policy (Standard-Werte)"
 
 function Show-Tool15 {
     [CmdletBinding()]
@@ -76,7 +69,6 @@ function Show-Tool15 {
         return
     }
 
-    # Schutz-Flag gegen Event-Deadlocks beim Beenden
     $isClosing = $false
 
     # --- Hauptfenster ---
@@ -90,7 +82,7 @@ function Show-Tool15 {
     # --- Untere Statusleiste fuer Fortschrittsanzeige ---
     $panelBottomStatus = New-Object System.Windows.Forms.Panel
     $panelBottomStatus.Dock = [System.Windows.Forms.DockStyle]::Bottom
-    $panelBottomStatus.Height = 30
+    $panelBottomStatus.Height = 32
     $panelBottomStatus.BackColor = [System.Drawing.Color]::FromArgb(240, 242, 246)
     $panelBottomStatus.Padding = New-Object System.Windows.Forms.Padding(10, 4, 10, 4)
 
@@ -98,17 +90,17 @@ function Show-Tool15 {
     $lblProgressInfo.Dock = [System.Windows.Forms.DockStyle]::Fill
     $lblProgressInfo.Text = "Bereit."
     $lblProgressInfo.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $lblProgressInfo.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
+    $lblProgressInfo.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
     $pbarGlobal = New-Object System.Windows.Forms.ProgressBar
     $pbarGlobal.Dock = [System.Windows.Forms.DockStyle]::Right
-    $pbarGlobal.Width = 320
+    $pbarGlobal.Width = 360
     $pbarGlobal.Visible = $false
 
     $panelBottomStatus.Controls.Add($lblProgressInfo)
     $panelBottomStatus.Controls.Add($pbarGlobal)
 
-    # --- TabControl mit groesserer Schrift & Polsterung ---
+    # --- TabControl mit optimierter Schrift & Polsterung ---
     $tabControl = New-Object System.Windows.Forms.TabControl
     $tabControl.Dock = [System.Windows.Forms.DockStyle]::Fill
     $tabControl.Font = New-Object System.Drawing.Font("Segoe UI", 10.5, [System.Drawing.FontStyle]::Bold)
@@ -127,7 +119,6 @@ function Show-Tool15 {
     $panelOverviewTop.BackColor = [System.Drawing.Color]::FromArgb(245, 248, 252)
     $panelOverviewTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
-    # Zeile 1: Filter, Suche, Einlesen & Snapshot-Buttons
     $lblViewFilter = New-Object System.Windows.Forms.Label
     $lblViewFilter.Text = "Ansicht:"
     $lblViewFilter.Location = New-Object System.Drawing.Point(12, 16)
@@ -185,9 +176,8 @@ function Show-Tool15 {
     $btnPsInfo.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 245)
     $btnPsInfo.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
 
-    # Zeile 2: Legende
     $lblLegendOverview = New-Object System.Windows.Forms.Label
-    $lblLegendOverview.Text = "Legende:  [Blau/Lila] Default GPO  |  [Gruen] OK (Nur Computer oder Benutzer)  |  [Rot] Nicht OK (Beide aktiv / inaktiv)"
+    $lblLegendOverview.Text = "Legende:  [Blau] Echte Default GPO  |  [Orange] DDP-Integritaetswarnung  |  [Gruen] OK (1 Seite aktiv)  |  [Rot] Nicht OK"
     $lblLegendOverview.Location = New-Object System.Drawing.Point(12, 52)
     $lblLegendOverview.AutoSize = $true
     $lblLegendOverview.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
@@ -208,7 +198,6 @@ function Show-Tool15 {
     $splitOverview.SplitterDistance = 980
     $splitOverview.SplitterWidth = 6
 
-    # Linke Seite Tab 1
     $panelOvLeft = New-Object System.Windows.Forms.Panel
     $panelOvLeft.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelOvLeft.Padding = New-Object System.Windows.Forms.Padding(10, 8, 4, 10)
@@ -217,7 +206,7 @@ function Show-Tool15 {
     $lblOvMasterTitle.Text = "Gruppenrichtlinien der Domaene (Klick auf Spaltenkopf zum Sortieren):"
     $lblOvMasterTitle.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblOvMasterTitle.Height = 28
-    $lblOvMasterTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblOvMasterTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
 
     $gridOvMaster = New-Object System.Windows.Forms.DataGridView
     $gridOvMaster.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -233,16 +222,15 @@ function Show-Tool15 {
     $gridOvMaster.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
     $gridOvMaster.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::AllCells
     $gridOvMaster.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
-    $gridOvMaster.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $gridOvMaster.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
     $gridOvMaster.ColumnHeadersHeight = 34
-    $gridOvMaster.RowTemplate.Height = 26
-    $gridOvMaster.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
+    $gridOvMaster.RowTemplate.Height = 28
+    $gridOvMaster.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(249, 251, 254)
 
     $panelOvLeft.Controls.Add($gridOvMaster)
     $panelOvLeft.Controls.Add($lblOvMasterTitle)
     $splitOverview.Panel1.Controls.Add($panelOvLeft)
 
-    # Rechte Seite Tab 1 (Mit 46px Hoehe fuer 2 Zeilen Textumbruch)
     $panelOvRight = New-Object System.Windows.Forms.Panel
     $panelOvRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelOvRight.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 10)
@@ -251,7 +239,7 @@ function Show-Tool15 {
     $lblOvDetailsTitle.Text = "Verlinkungsziele der GPO (OUs / Domaene):"
     $lblOvDetailsTitle.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblOvDetailsTitle.Height = 46
-    $lblOvDetailsTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblOvDetailsTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
 
     $gridOvDetails = New-Object System.Windows.Forms.DataGridView
     $gridOvDetails.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -265,10 +253,10 @@ function Show-Tool15 {
     $gridOvDetails.BackgroundColor = [System.Drawing.Color]::White
     $gridOvDetails.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
     $gridOvDetails.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
-    $gridOvDetails.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $gridOvDetails.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
     $gridOvDetails.ColumnHeadersHeight = 34
-    $gridOvDetails.RowTemplate.Height = 26
-    $gridOvDetails.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
+    $gridOvDetails.RowTemplate.Height = 28
+    $gridOvDetails.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(249, 251, 254)
     $gridOvDetails.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
 
     $panelOvRight.Controls.Add($gridOvDetails)
@@ -279,7 +267,7 @@ function Show-Tool15 {
     $tabOverview.Controls.Add($panelOverviewTop)
 
     # =========================================================================
-    # REGISTER 2: GPO Richtlinien-Einstellungen & Inspektor
+    # REGISTER 2: GPO Richtlinien-Einstellungen & Inspektor (Mit Pfadanzeige)
     # =========================================================================
     $tabSettings = New-Object System.Windows.Forms.TabPage
     $tabSettings.Text = "2. GPO Richtlinien-Einstellungen & Inspektor"
@@ -287,19 +275,48 @@ function Show-Tool15 {
 
     $panelSettingsTop = New-Object System.Windows.Forms.Panel
     $panelSettingsTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelSettingsTop.Height = 85
+    $panelSettingsTop.Height = 110
     $panelSettingsTop.BackColor = [System.Drawing.Color]::FromArgb(242, 245, 250)
     $panelSettingsTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
-    # Zeile 1: Ansichts-Filter, GPO-Auswahl & Laden
+    # Zeile 1: Pfad & Export
+    $lblSettingsTargetPath = New-Object System.Windows.Forms.Label
+    $lblSettingsTargetPath.Text = "Export Ziel-Pfad:"
+    $lblSettingsTargetPath.Location = New-Object System.Drawing.Point(12, 17)
+    $lblSettingsTargetPath.AutoSize = $true
+    $lblSettingsTargetPath.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+
+    $txtSettingsExportDir = New-Object System.Windows.Forms.TextBox
+    $txtSettingsExportDir.Location = New-Object System.Drawing.Point(135, 14)
+    $txtSettingsExportDir.Size = New-Object System.Drawing.Size(440, 25)
+    $txtSettingsExportDir.Text = "C:\Install\Backup\GPO"
+
+    $btnBrowseSettingsDir = New-Object System.Windows.Forms.Button
+    $btnBrowseSettingsDir.Text = "Durchsuchen..."
+    $btnBrowseSettingsDir.Location = New-Object System.Drawing.Point(585, 11)
+    $btnBrowseSettingsDir.Size = New-Object System.Drawing.Size(115, 30)
+
+    $btnExportCsv = New-Object System.Windows.Forms.Button
+    $btnExportCsv.Text = "CSV Export"
+    $btnExportCsv.Location = New-Object System.Drawing.Point(710, 11)
+    $btnExportCsv.Size = New-Object System.Drawing.Size(110, 30)
+    $btnExportCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
+
+    $lblSettingsStatus = New-Object System.Windows.Forms.Label
+    $lblSettingsStatus.Text = "Bereit."
+    $lblSettingsStatus.Location = New-Object System.Drawing.Point(835, 17)
+    $lblSettingsStatus.AutoSize = $true
+    $lblSettingsStatus.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
+
+    # Zeile 2: Filter, GPO-Auswahl, Laden & Suche
     $lblSettingsViewFilter = New-Object System.Windows.Forms.Label
     $lblSettingsViewFilter.Text = "Ansicht:"
-    $lblSettingsViewFilter.Location = New-Object System.Drawing.Point(12, 16)
+    $lblSettingsViewFilter.Location = New-Object System.Drawing.Point(12, 58)
     $lblSettingsViewFilter.AutoSize = $true
     $lblSettingsViewFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboSettingsViewMode = New-Object System.Windows.Forms.ComboBox
-    $comboSettingsViewMode.Location = New-Object System.Drawing.Point(75, 13)
+    $comboSettingsViewMode.Location = New-Object System.Drawing.Point(75, 55)
     $comboSettingsViewMode.Size = New-Object System.Drawing.Size(210, 25)
     $comboSettingsViewMode.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
     [void]$comboSettingsViewMode.Items.Add("Alle GPOs")
@@ -309,44 +326,37 @@ function Show-Tool15 {
 
     $lblGpo = New-Object System.Windows.Forms.Label
     $lblGpo.Text = "GPO:"
-    $lblGpo.Location = New-Object System.Drawing.Point(300, 16)
+    $lblGpo.Location = New-Object System.Drawing.Point(295, 58)
     $lblGpo.AutoSize = $true
     $lblGpo.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboGpo = New-Object System.Windows.Forms.ComboBox
-    $comboGpo.Location = New-Object System.Drawing.Point(345, 13)
-    $comboGpo.Size = New-Object System.Drawing.Size(390, 25)
+    $comboGpo.Location = New-Object System.Drawing.Point(340, 55)
+    $comboGpo.Size = New-Object System.Drawing.Size(360, 25)
     $comboGpo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
     $btnLoadSettings = New-Object System.Windows.Forms.Button
     $btnLoadSettings.Text = "Laden"
-    $btnLoadSettings.Location = New-Object System.Drawing.Point(745, 11)
-    $btnLoadSettings.Size = New-Object System.Drawing.Size(95, 29)
+    $btnLoadSettings.Location = New-Object System.Drawing.Point(710, 52)
+    $btnLoadSettings.Size = New-Object System.Drawing.Size(110, 32)
     $btnLoadSettings.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
+    $btnLoadSettings.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
-    # Zeile 2: Live-Suche, CSV-Export & Status
     $lblFilter = New-Object System.Windows.Forms.Label
     $lblFilter.Text = "Suche:"
-    $lblFilter.Location = New-Object System.Drawing.Point(12, 51)
+    $lblFilter.Location = New-Object System.Drawing.Point(830, 58)
     $lblFilter.AutoSize = $true
     $lblFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtFilter = New-Object System.Windows.Forms.TextBox
-    $txtFilter.Location = New-Object System.Drawing.Point(75, 48)
-    $txtFilter.Size = New-Object System.Drawing.Size(210, 25)
+    $txtFilter.Location = New-Object System.Drawing.Point(885, 55)
+    $txtFilter.Size = New-Object System.Drawing.Size(200, 25)
 
-    $btnExportCsv = New-Object System.Windows.Forms.Button
-    $btnExportCsv.Text = "CSV Export"
-    $btnExportCsv.Location = New-Object System.Drawing.Point(300, 46)
-    $btnExportCsv.Size = New-Object System.Drawing.Size(110, 29)
-    $btnExportCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
-
-    $lblSettingsStatus = New-Object System.Windows.Forms.Label
-    $lblSettingsStatus.Text = "Bereit."
-    $lblSettingsStatus.Location = New-Object System.Drawing.Point(425, 52)
-    $lblSettingsStatus.AutoSize = $true
-    $lblSettingsStatus.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
-
+    $panelSettingsTop.Controls.Add($lblSettingsTargetPath)
+    $panelSettingsTop.Controls.Add($txtSettingsExportDir)
+    $panelSettingsTop.Controls.Add($btnBrowseSettingsDir)
+    $panelSettingsTop.Controls.Add($btnExportCsv)
+    $panelSettingsTop.Controls.Add($lblSettingsStatus)
     $panelSettingsTop.Controls.Add($lblSettingsViewFilter)
     $panelSettingsTop.Controls.Add($comboSettingsViewMode)
     $panelSettingsTop.Controls.Add($lblGpo)
@@ -354,8 +364,6 @@ function Show-Tool15 {
     $panelSettingsTop.Controls.Add($btnLoadSettings)
     $panelSettingsTop.Controls.Add($lblFilter)
     $panelSettingsTop.Controls.Add($txtFilter)
-    $panelSettingsTop.Controls.Add($btnExportCsv)
-    $panelSettingsTop.Controls.Add($lblSettingsStatus)
 
     $splitSettings = New-Object System.Windows.Forms.SplitContainer
     $splitSettings.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -370,7 +378,7 @@ function Show-Tool15 {
     $lblTableTitle.Text = "Konfigurierte Einstellungen:"
     $lblTableTitle.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblTableTitle.Height = 28
-    $lblTableTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblTableTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
 
     $gridSettings = New-Object System.Windows.Forms.DataGridView
     $gridSettings.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -385,10 +393,10 @@ function Show-Tool15 {
     $gridSettings.BackgroundColor = [System.Drawing.Color]::White
     $gridSettings.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
     $gridSettings.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
-    $gridSettings.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $gridSettings.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
     $gridSettings.ColumnHeadersHeight = 34
-    $gridSettings.RowTemplate.Height = 26
-    $gridSettings.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
+    $gridSettings.RowTemplate.Height = 28
+    $gridSettings.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(249, 251, 254)
 
     [void]$gridSettings.Columns.Add("colScope", "Bereich")
     [void]$gridSettings.Columns.Add("colCategory", "Kategorie / Pfad")
@@ -412,7 +420,6 @@ function Show-Tool15 {
     $panelSettingsLeft.Controls.Add($lblTableTitle)
     $splitSettings.Panel1.Controls.Add($panelSettingsLeft)
 
-    # Rechte Seite Tab 2 (Detailbereich)
     $panelSettingsRight = New-Object System.Windows.Forms.Panel
     $panelSettingsRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelSettingsRight.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 10)
@@ -421,7 +428,7 @@ function Show-Tool15 {
     $lblDescHeader.Text = "Erlaeuterung & Richtlinien-Details:"
     $lblDescHeader.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblDescHeader.Height = 28
-    $lblDescHeader.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblDescHeader.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
 
     $txtDescription = New-Object System.Windows.Forms.TextBox
     $txtDescription.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -451,7 +458,6 @@ function Show-Tool15 {
     $panelBackupTop.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
     $panelBackupTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
-    # Zeile 1: Pfad, Durchsuchen, CSV-Export & 2 getrennte HTML-Buttons
     $lblTargetPath = New-Object System.Windows.Forms.Label
     $lblTargetPath.Text = "Backup Ziel-Pfad:"
     $lblTargetPath.Location = New-Object System.Drawing.Point(12, 17)
@@ -474,16 +480,14 @@ function Show-Tool15 {
     $btnExportBackupCsv.Size = New-Object System.Drawing.Size(95, 30)
     $btnExportBackupCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
-    # HTML Report NUR fuer die in der Tabelle markierte GPO
     $btnExportSelectedHtml = New-Object System.Windows.Forms.Button
     $btnExportSelectedHtml.Text = "HTML (Ausgewaehlt)"
     $btnExportSelectedHtml.Location = New-Object System.Drawing.Point(730, 11)
     $btnExportSelectedHtml.Size = New-Object System.Drawing.Size(155, 30)
     $btnExportSelectedHtml.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230)
 
-    # HTML Report fuer alle GPOs der aktuellen Filter-Ansicht
     $btnExportAllHtml = New-Object System.Windows.Forms.Button
-    $btnExportAllHtml.Text = "HTML (Alle)"
+    $btnExportAllHtml.Text = "HTML (Gefilterte)"
     $btnExportAllHtml.Location = New-Object System.Drawing.Point(895, 11)
     $btnExportAllHtml.Size = New-Object System.Drawing.Size(150, 30)
     $btnExportAllHtml.BackColor = [System.Drawing.Color]::FromArgb(255, 238, 220)
@@ -494,7 +498,6 @@ function Show-Tool15 {
     $lblBackupNote.AutoSize = $true
     $lblBackupNote.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
 
-    # Zeile 2: Ansichts-Filter, Suche & Backup-Aktionen
     $lblBackupViewFilter = New-Object System.Windows.Forms.Label
     $lblBackupViewFilter.Text = "Ansicht:"
     $lblBackupViewFilter.Location = New-Object System.Drawing.Point(12, 58)
@@ -552,13 +555,11 @@ function Show-Tool15 {
     $panelBackupTop.Controls.Add($btnBackupSelected)
     $panelBackupTop.Controls.Add($btnBackupAll)
 
-    # Dynamischer Hauptbereich in Register 3
     $splitBackupMain = New-Object System.Windows.Forms.SplitContainer
     $splitBackupMain.Dock = [System.Windows.Forms.DockStyle]::Fill
     $splitBackupMain.SplitterDistance = 750
     $splitBackupMain.SplitterWidth = 6
 
-    # Links: GPO-Tabelle
     $panelGpoLeft = New-Object System.Windows.Forms.Panel
     $panelGpoLeft.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelGpoLeft.Padding = New-Object System.Windows.Forms.Padding(10, 8, 4, 10)
@@ -567,7 +568,7 @@ function Show-Tool15 {
     $lblGpoGrid.Text = "1. Gruppenrichtlinien der Domaene:"
     $lblGpoGrid.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblGpoGrid.Height = 28
-    $lblGpoGrid.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblGpoGrid.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
 
     $gridGpos = New-Object System.Windows.Forms.DataGridView
     $gridGpos.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -580,23 +581,21 @@ function Show-Tool15 {
     $gridGpos.BackgroundColor = [System.Drawing.Color]::White
     $gridGpos.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
     $gridGpos.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
-    $gridGpos.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $gridGpos.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
     $gridGpos.ColumnHeadersHeight = 34
-    $gridGpos.RowTemplate.Height = 26
-    $gridGpos.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
+    $gridGpos.RowTemplate.Height = 28
+    $gridGpos.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(249, 251, 254)
 
     $panelGpoLeft.Controls.Add($gridGpos)
     $panelGpoLeft.Controls.Add($lblGpoGrid)
     $splitBackupMain.Panel1.Controls.Add($panelGpoLeft)
 
-    # Rechts: Geteilt in Verknuepfungen (Oben) und Log (Unten)
     $splitBackupRight = New-Object System.Windows.Forms.SplitContainer
     $splitBackupRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $splitBackupRight.Orientation = [System.Windows.Forms.Orientation]::Horizontal
     $splitBackupRight.SplitterDistance = 280
     $splitBackupRight.SplitterWidth = 6
 
-    # Rechts Oben: Verknuepfungen
     $panelLinks = New-Object System.Windows.Forms.Panel
     $panelLinks.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelLinks.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 4)
@@ -605,7 +604,7 @@ function Show-Tool15 {
     $lblLinks.Text = "2. Verknuepfungs-Ziele (OUs / Sites):"
     $lblLinks.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblLinks.Height = 28
-    $lblLinks.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblLinks.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
 
     $gridLinks = New-Object System.Windows.Forms.DataGridView
     $gridLinks.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -616,16 +615,15 @@ function Show-Tool15 {
     $gridLinks.BackgroundColor = [System.Drawing.Color]::White
     $gridLinks.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
     $gridLinks.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
-    $gridLinks.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $gridLinks.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
     $gridLinks.ColumnHeadersHeight = 34
-    $gridLinks.RowTemplate.Height = 26
-    $gridLinks.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
+    $gridLinks.RowTemplate.Height = 28
+    $gridLinks.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(249, 251, 254)
 
     $panelLinks.Controls.Add($gridLinks)
     $panelLinks.Controls.Add($lblLinks)
     $splitBackupRight.Panel1.Controls.Add($panelLinks)
 
-    # Rechts Unten: Log
     $panelLog = New-Object System.Windows.Forms.Panel
     $panelLog.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelLog.Padding = New-Object System.Windows.Forms.Padding(4, 4, 10, 10)
@@ -634,7 +632,7 @@ function Show-Tool15 {
     $lblLog.Text = "3. Backup- & Aktivitaets-Protokoll:"
     $lblLog.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblLog.Height = 28
-    $lblLog.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblLog.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
 
     $txtLog = New-Object System.Windows.Forms.TextBox
     $txtLog.Dock = [System.Windows.Forms.DockStyle]::Fill
@@ -654,7 +652,7 @@ function Show-Tool15 {
     $tabBackup.Controls.Add($panelBackupTop)
 
     # =========================================================================
-    # REGISTER 4: GPO-Vergleich (Diff)
+    # REGISTER 4: GPO-Vergleich (Diff) & DDP-Baseline-Check
     # =========================================================================
     $tabCompare = New-Object System.Windows.Forms.TabPage
     $tabCompare.Text = "4. GPO-Vergleich (Diff)"
@@ -666,7 +664,6 @@ function Show-Tool15 {
     $panelCompareTop.BackColor = [System.Drawing.Color]::FromArgb(242, 245, 250)
     $panelCompareTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
-    # Zeile 1: Auswahl GPO 1, GPO 2 und Vergleichen
     $lblGpo1 = New-Object System.Windows.Forms.Label
     $lblGpo1.Text = "GPO 1 (Basis):"
     $lblGpo1.Location = New-Object System.Drawing.Point(12, 16)
@@ -675,27 +672,33 @@ function Show-Tool15 {
 
     $comboGpo1 = New-Object System.Windows.Forms.ComboBox
     $comboGpo1.Location = New-Object System.Drawing.Point(115, 13)
-    $comboGpo1.Size = New-Object System.Drawing.Size(300, 25)
+    $comboGpo1.Size = New-Object System.Drawing.Size(280, 25)
     $comboGpo1.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
     $lblGpo2 = New-Object System.Windows.Forms.Label
     $lblGpo2.Text = "GPO 2 (Vergleich):"
-    $lblGpo2.Location = New-Object System.Drawing.Point(435, 16)
+    $lblGpo2.Location = New-Object System.Drawing.Point(410, 16)
     $lblGpo2.AutoSize = $true
     $lblGpo2.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboGpo2 = New-Object System.Windows.Forms.ComboBox
-    $comboGpo2.Location = New-Object System.Drawing.Point(585, 13)
-    $comboGpo2.Size = New-Object System.Drawing.Size(300, 25)
+    $comboGpo2.Location = New-Object System.Drawing.Point(540, 13)
+    $comboGpo2.Size = New-Object System.Drawing.Size(290, 25)
     $comboGpo2.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
 
     $btnCompare = New-Object System.Windows.Forms.Button
     $btnCompare.Text = "Vergleichen"
-    $btnCompare.Location = New-Object System.Drawing.Point(905, 10)
-    $btnCompare.Size = New-Object System.Drawing.Size(120, 30)
+    $btnCompare.Location = New-Object System.Drawing.Point(840, 10)
+    $btnCompare.Size = New-Object System.Drawing.Size(110, 30)
     $btnCompare.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
 
-    # Zeile 2: Filter-Checkbox, CSV-Export & dynamischer Status
+    $btnCompareDdpBaseline = New-Object System.Windows.Forms.Button
+    $btnCompareDdpBaseline.Text = "DDP vs. MS-Standard"
+    $btnCompareDdpBaseline.Location = New-Object System.Drawing.Point(960, 10)
+    $btnCompareDdpBaseline.Size = New-Object System.Drawing.Size(170, 30)
+    $btnCompareDdpBaseline.BackColor = [System.Drawing.Color]::FromArgb(255, 243, 224)
+    $btnCompareDdpBaseline.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+
     $chkOnlyDiffs = New-Object System.Windows.Forms.CheckBox
     $chkOnlyDiffs.Text = "Nur Unterschiede anzeigen"
     $chkOnlyDiffs.Location = New-Object System.Drawing.Point(12, 52)
@@ -720,6 +723,7 @@ function Show-Tool15 {
     $panelCompareTop.Controls.Add($lblGpo2)
     $panelCompareTop.Controls.Add($comboGpo2)
     $panelCompareTop.Controls.Add($btnCompare)
+    $panelCompareTop.Controls.Add($btnCompareDdpBaseline)
     $panelCompareTop.Controls.Add($chkOnlyDiffs)
     $panelCompareTop.Controls.Add($btnExportCompareCsv)
     $panelCompareTop.Controls.Add($lblCompareStatus)
@@ -747,11 +751,11 @@ function Show-Tool15 {
     $gridCompare.BackgroundColor = [System.Drawing.Color]::White
     $gridCompare.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
     $gridCompare.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
-    $gridCompare.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $gridCompare.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
     $gridCompare.ColumnHeadersDefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::False
     $gridCompare.ColumnHeadersHeight = 34
-    $gridCompare.RowTemplate.Height = 26
-    $gridCompare.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 253)
+    $gridCompare.RowTemplate.Height = 28
+    $gridCompare.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(249, 251, 254)
 
     [void]$gridCompare.Columns.Add("colCmpScope", "Bereich")
     [void]$gridCompare.Columns.Add("colCmpCategory", "Kategorie / Pfad")
@@ -782,7 +786,6 @@ function Show-Tool15 {
     $tabControl.TabPages.Add($tabBackup)
     $tabControl.TabPages.Add($tabCompare)
 
-    # Statusleiste und TabControl hinzufuegen
     $form.Controls.Add($tabControl)
     $form.Controls.Add($panelBottomStatus)
     $panelBottomStatus.SendToBack()
@@ -797,60 +800,286 @@ function Show-Tool15 {
     $rawCompareList  = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     # =========================================================================
-    # SPALTENSORTIERUNG FUER DATAGRIDVIEWS
+    # REFERENZ: MICROSOFT DEFAULT DOMAIN POLICY WERKSZUSTAND
     # =========================================================================
-    function Enable-GridSorting {
-        param([System.Windows.Forms.DataGridView]$Grid)
+    function Get-DefaultDomainPolicyBaseline {
+        $dateStr = (Get-Date -Format "yyyyMMdd")
+        $timeStr = (Get-Date -Format "HHmm")
+        $baseline = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-        $Grid.Add_ColumnHeaderMouseClick({
-            param($sender, $e)
-            if ($isClosing -or $form.IsDisposed -or $Grid.IsDisposed) { return }
+        $addBase = {
+            param($cat, $name, $state, $val, $explain)
+            $baseline.Add([PSCustomObject]@{
+                Scope     = "Computer"
+                Category  = $cat
+                Name      = $name
+                Value     = $val
+                State     = $state
+                Supported = "Windows 2000 und hoeher"
+                Explain   = $explain
+                GpoName   = $script:DdpBaselineName
+                Datum     = $dateStr
+                Uhrzeit   = $timeStr
+            })
+        }
 
-            $targetGrid = $sender
-            $colProp = $targetGrid.Columns[$e.ColumnIndex].DataPropertyName
-            if (-not $colProp) { $colProp = $targetGrid.Columns[$e.ColumnIndex].HeaderText }
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kennwortrichtlinie" "Kennwortchronik erzwingen (Password History)" "Aktiviert" "24 gespeicherte Kennwoerter" "Bestimmt die Anzahl neuer Kennwoerter, die verwendet werden muessen, bevor ein altes Kennwort wiederverwendet werden kann. Microsoft Standard: 24."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kennwortrichtlinie" "Maximales Kennwortalter (Maximum Password Age)" "Aktiviert" "42 Tage" "Bestimmt den Zeitraum in Tagen, fuer den ein Kennwort verwendet werden kann, bevor das System den Benutzer zum Aendern auffordert. Microsoft Standard: 42 Tage."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kennwortrichtlinie" "Minimales Kennwortalter (Minimum Password Age)" "Aktiviert" "1 Tag" "Bestimmt den Zeitraum in Tagen, fuer den ein Kennwort verwendet werden muss, bevor der Benutzer es aendern kann. Microsoft Standard: 1 Tag."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kennwortrichtlinie" "Mindestkennwortlaenge (Minimum Password Length)" "Aktiviert" "7 Zeichen" "Bestimmt die Mindestanzahl von Zeichen, die das Kennwort eines Benutzerkontos enthalten muss. Microsoft Standard: 7 Zeichen."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kennwortrichtlinie" "Kennwort muss Komplexitaetsanforderungen entsprechen" "Aktiviert" "Aktiviert" "Kennwoerter muessen Zeichen aus mindestens 3 der 4 Kategorien enthalten. Microsoft Standard: Aktiviert."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kennwortrichtlinie" "Kennwoerter mit umkehrbarer Verschluesselung speichern" "Deaktiviert" "Deaktiviert" "Bestimmt, ob das Betriebssystem Kennwoerter unter Verwendung umkehrbarer Verschluesselung speichert. Microsoft Standard: Deaktiviert."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kontosperrungsrichtlinie" "Kontosperrungsschwelle (Account Lockout Threshold)" "Deaktiviert" "0 ungueltige Anmeldeversuche (Keine Kontosperrung)" "Bestimmt die Anzahl fehlerhafter Anmeldeversuche, nach denen ein Benutzerkonto gesperrt wird. Microsoft Standard: 0."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kontosperrungsrichtlinie" "Kontosperrdauer (Account Lockout Duration)" "Nicht definiert" "Nicht definiert" "Bestimmt die Dauer einer Kontosperre. Microsoft Standard: Nicht definiert."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kontosperrungsrichtlinie" "Zuruecksetzungsdauer des Kontosperrzaehlers" "Nicht definiert" "Nicht definiert" "Bestimmt die Zeit bis zum Zuruecksetzen des Zaehlers. Microsoft Standard: Nicht definiert."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kerberos-Richtlinie" "Maximale Toleranz fuer Synchronisierung der Computeruhr" "Aktiviert" "5 Minuten" "Maximal zulaessige Zeitdifferenz zwischen Client und DC. Microsoft Standard: 5 Minuten."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kerberos-Richtlinie" "Maximale Lebensdauer fuer Benutzerticket (TGT)" "Aktiviert" "10 Stunden" "Maximale Gueltigkeitsdauer eines TGT. Microsoft Standard: 10 Stunden."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kerberos-Richtlinie" "Maximale Lebensdauer fuer Serviceticket" "Aktiviert" "600 Minuten" "Maximale Gueltigkeitsdauer eines Servicetickets. Microsoft Standard: 600 Minuten."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kerberos-Richtlinie" "Maximale Lebensdauer fuer Benutzer-Ticket-Erneuerung" "Aktiviert" "7 Tage" "Zeitraum zur TGT-Erneuerung. Microsoft Standard: 7 Tage."
+        & $addBase "Sicherheitseinstellungen / Kontorichtlinien / Kerberos-Richtlinie" "Benutzeranmeldeeinschraenkungen erzwingen" "Aktiviert" "Aktiviert" "Ueberpruefung der Anmelderechte bei Ticketanforderung. Microsoft Standard: Aktiviert."
 
-            if ($targetGrid.Tag -and $targetGrid.Tag.Column -eq $colProp) {
-                $asc = -not $targetGrid.Tag.Ascending
-            } else {
-                $asc = $true
-            }
-            $targetGrid.Tag = @{ Column = $colProp; Ascending = $asc }
-
-            $data = @($targetGrid.DataSource)
-            if ($null -eq $data -or $data.Count -le 1) { return }
-
-            $sorted = $data | Sort-Object -Property @{
-                Expression = {
-                    $val = $_.$colProp
-                    if ($null -eq $val) { return "" }
-                    if ($colProp -eq "Link-Anzahl" -and ($val -as [int])) { return [int]$val }
-                    return $val
-                }
-                Descending = (-not $asc)
-            }
-
-            $arr = [System.Collections.ArrayList]::new()
-            foreach ($item in $sorted) { [void]$arr.Add($item) }
-            $targetGrid.DataSource = $arr
-
-            foreach ($col in $targetGrid.Columns) {
-                $col.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
-            }
-            $targetGrid.Columns[$e.ColumnIndex].HeaderCell.SortGlyphDirection = if ($asc) { 
-                [System.Windows.Forms.SortOrder]::Ascending 
-            } else { 
-                [System.Windows.Forms.SortOrder]::Descending 
-            }
-        })
+        return $baseline
     }
 
-    Enable-GridSorting -Grid $gridOvMaster
-    Enable-GridSorting -Grid $gridOvDetails
-    Enable-GridSorting -Grid $gridGpos
+    function Get-NormalizedPolicyKey ($item) {
+        $n = "$($item.Name)".ToLower()
+        if ($n -match "passwordhistory" -or $n -match "kennwortchronik" -or $n -match "password history") { return "$($item.Scope)|PasswordHistory" }
+        if ($n -match "maximumpasswordage" -or $n -match "maximales kennwortalter" -or $n -match "maximum password age") { return "$($item.Scope)|MaxPasswordAge" }
+        if ($n -match "minimumpasswordage" -or $n -match "minimales kennwortalter" -or $n -match "minimum password age") { return "$($item.Scope)|MinPasswordAge" }
+        if ($n -match "minpasswordlength" -or $n -match "mindestkennwort" -or $n -match "minimum password length") { return "$($item.Scope)|MinPasswordLength" }
+        if ($n -match "passwordcomplexity" -or $n -match "komplexit" -or $n -match "complexity requirements") { return "$($item.Scope)|PasswordComplexity" }
+        if ($n -match "cleartextpassword" -or $n -match "umkehrbar" -or $n -match "reversible encryption") { return "$($item.Scope)|ReversibleEncryption" }
+        if ($n -match "lockoutbadcount" -or $n -match "kontosperrungsschwelle" -or $n -match "lockout threshold") { return "$($item.Scope)|LockoutThreshold" }
+        if ($n -match "lockoutduration" -or $n -match "kontosperrdauer" -or $n -match "lockout duration") { return "$($item.Scope)|LockoutDuration" }
+        if ($n -match "resetlockoutcount" -or $n -match "zuruecksetzungsdauer" -or $n -match "reset account lockout") { return "$($item.Scope)|ResetLockoutCount" }
+        if ($n -match "maxclockskew" -or $n -match "synchronisierung der computeruhr" -or $n -match "clock synchronization") { return "$($item.Scope)|MaxClockSkew" }
+        if ($n -match "maxticketage" -or $n -match "lebensdauer.*benutzerticket" -or $n -match "lifetime for user ticket") { return "$($item.Scope)|MaxTicketAge" }
+        if ($n -match "maxserviceage" -or $n -match "lebensdauer.*serviceticket" -or $n -match "lifetime for service ticket") { return "$($item.Scope)|MaxServiceAge" }
+        if ($n -match "maxrenewage" -or $n -match "erneuerung von benutzertickets" -or $n -match "user ticket renewal") { return "$($item.Scope)|MaxRenewAge" }
+        if ($n -match "ticketvalidateclient" -or $n -match "benutzeranmeldeeinschraenkungen" -or $n -match "user logon restrictions") { return "$($item.Scope)|TicketValidateClient" }
+        return "$($item.Scope)|$($item.Category)|$($item.Name)"
+    }
 
     # =========================================================================
-    # LOGIK TAB 1: ADSI GPO-Uebersicht & OU-Links
+    # PRAEZISER XML-PARSER (Trennt Parameter-Werte strikt von Explain-Texten)
+    # =========================================================================
+    function Get-ParsedGpoSettings {
+        param([string]$GpoId, [string]$GpoDisplayName)
+
+        $dateStr = Get-Date -Format "yyyyMMdd"
+        $timeStr = Get-Date -Format "HHmm"
+        $list = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+        [xml]$xml = Get-GPOReport -Guid $GpoId -ReportType Xml -ErrorAction Stop
+
+        function Parse-GpoSection ($sectionNode, $scope) {
+            if ($null -eq $sectionNode -or -not $sectionNode.ExtensionData) { return }
+
+            foreach ($ext in $sectionNode.ExtensionData.Extension) {
+                $extType = if ($ext.type) { $ext.type } else { $ext.LocalName }
+                $extCategory = if ($ext.Name) { $ext.Name } else { "Erweiterung" }
+
+                # 1. Administrative Vorlagen (<Policy>)
+                $policies = $ext.SelectNodes(".//*[local-name()='Policy']")
+                if ($policies -and $policies.Count -gt 0) {
+                    foreach ($p in $policies) {
+                        $pName = if ($p.SelectSingleNode("./*[local-name()='Name']")) { $p.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim() } elseif ($p.Name) { $p.Name.Trim() } else { "Unbenannte Richtlinie" }
+                        $rawState = if ($p.SelectSingleNode("./*[local-name()='State']")) { $p.SelectSingleNode("./*[local-name()='State']").InnerText.Trim() } elseif ($p.State) { $p.State.Trim() } else { "Enabled" }
+                        $pState = switch ($rawState) { "Enabled" { "Aktiviert" } "Disabled" { "Deaktiviert" } default { $rawState } }
+                        $pCat = if ($p.SelectSingleNode("./*[local-name()='Category']")) { $p.SelectSingleNode("./*[local-name()='Category']").InnerText.Trim() } else { $extCategory }
+                        $pSupported = if ($p.SelectSingleNode("./*[local-name()='Supported' or local-name()='SupportedOn']")) { $p.SelectSingleNode("./*[local-name()='Supported' or local-name()='SupportedOn']").InnerText.Trim() } else { "Keine Angabe" }
+                        $pExplain = if ($p.SelectSingleNode("./*[local-name()='Explain' or local-name()='ExplainText']")) { $p.SelectSingleNode("./*[local-name()='Explain' or local-name()='ExplainText']").InnerText.Trim() } else { "Keine Erklaerung hinterlegt." }
+
+                        $ignoredTags = @("Name", "State", "Explain", "ExplainText", "Supported", "SupportedOn", "Category", "Text")
+                        $paramValues = @()
+
+                        foreach ($child in $p.ChildNodes) {
+                            if ($child.LocalName -in $ignoredTags) { continue }
+                            $valNodes = $child.SelectNodes(".//*[local-name()='Value' or local-name()='Data' or local-name()='Setting' or local-name()='Decimal' or local-name()='String']")
+                            $nameNode = $child.SelectSingleNode("./*[local-name()='Name' or local-name()='Label']")
+                            $optLabel = if ($nameNode) { $nameNode.InnerText.Trim() } else { "" }
+
+                            $extractedList = @()
+                            if ($valNodes -and $valNodes.Count -gt 0) {
+                                foreach ($vn in $valNodes) {
+                                    if (-not [string]::IsNullOrWhiteSpace($vn.InnerText)) { $extractedList += $vn.InnerText.Trim() }
+                                }
+                            }
+                            elseif ($child.Attributes["value"]) {
+                                $extractedList += $child.Attributes["value"].Value.Trim()
+                            }
+                            elseif (-not [string]::IsNullOrWhiteSpace($child.InnerText) -and $child.ChildNodes.Count -le 1) {
+                                $extractedList += $child.InnerText.Trim()
+                            }
+
+                            if ($extractedList.Count -gt 0) {
+                                $joinedVals = $extractedList -join ", "
+                                if (-not [string]::IsNullOrWhiteSpace($optLabel) -and $optLabel -ne $joinedVals) {
+                                    $paramValues += "$($optLabel): $($joinedVals)"
+                                } else {
+                                    $paramValues += "$joinedVals"
+                                }
+                            }
+                        }
+
+                        $cleanValue = if ($paramValues.Count -gt 0) { $paramValues -join " | " } else { $pState }
+
+                        $list.Add([PSCustomObject]@{
+                            Scope     = $scope
+                            Category  = $pCat
+                            Name      = $pName
+                            Value     = $cleanValue
+                            State     = $pState
+                            Supported = $pSupported
+                            Explain   = $pExplain
+                            GpoName   = $GpoDisplayName
+                            Datum     = $dateStr
+                            Uhrzeit   = $timeStr
+                        })
+                    }
+                }
+
+                # 2. Systemdienste
+                $services = $ext.SelectNodes(".//*[local-name()='SystemServices'] | .//*[local-name()='Service']")
+                if ($services -and $services.Count -gt 0) {
+                    foreach ($svc in $services) {
+                        $svcName = if ($svc.SelectSingleNode("./*[local-name()='Display']/*[local-name()='Name']")) { $svc.SelectSingleNode("./*[local-name()='Display']/*[local-name()='Name']").InnerText.Trim() } elseif ($svc.SelectSingleNode("./*[local-name()='Name']")) { $svc.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim() } else { "Systemdienst" }
+                        $mode = if ($svc.SelectSingleNode("./*[local-name()='StartupMode']")) { $svc.SelectSingleNode("./*[local-name()='StartupMode']").InnerText.Trim() } elseif ($svc.SelectSingleNode("./*[local-name()='Mode']")) { $svc.SelectSingleNode("./*[local-name()='Mode']").InnerText.Trim() } else { "Konfiguriert" }
+                        $modeDE = switch ($mode) { "Disabled" { "Deaktiviert" } "Automatic" { "Automatisch" } "Manual" { "Manuell" } default { $mode } }
+
+                        $list.Add([PSCustomObject]@{
+                            Scope     = $scope
+                            Category  = "Sicherheitseinstellungen / Systemdienste"
+                            Name      = $svcName
+                            Value     = "Starttyp: $modeDE"
+                            State     = $modeDE
+                            Supported = "Windows Systemdienste"
+                            Explain   = "Startmodus fuer den Dienst '$svcName': $modeDE"
+                            GpoName   = $GpoDisplayName
+                            Datum     = $dateStr
+                            Uhrzeit   = $timeStr
+                        })
+                    }
+                }
+
+                # 3. GPP (Praeferenzen)
+                $gppNodes = $ext.SelectNodes(".//*[local-name()='Properties']")
+                if ($gppNodes -and $gppNodes.Count -gt 0) {
+                    foreach ($prop in $gppNodes) {
+                        $parent = $prop.ParentNode
+                        $itemType = $parent.LocalName
+                        $gppCategory = "Praeferenzen (GPP) / $itemType"
+
+                        $itemName = if ($parent.Attributes["name"]) { $parent.Attributes["name"].Value } elseif ($prop.Attributes["name"]) { $prop.Attributes["name"].Value } elseif ($prop.Attributes["path"]) { $prop.Attributes["path"].Value } elseif ($prop.Attributes["letter"]) { "Laufwerk $($prop.Attributes['letter'].Value):" } else { "GPP $itemType" }
+                        $actionCode = if ($prop.Attributes["action"]) { $prop.Attributes["action"].Value } else { "U" }
+                        $actionText = switch ($actionCode) { "C" { "Erstellen" } "U" { "Aktualisieren" } "R" { "Ersetzen" } "D" { "Loeschen" } default { $actionCode } }
+
+                        $valParts = @("Aktion: $actionText")
+                        if ($prop.Attributes["path"])       { $valParts += "Pfad: $($prop.Attributes['path'].Value)" }
+                        if ($prop.Attributes["targetPath"]) { $valParts += "Ziel: $($prop.Attributes['targetPath'].Value)" }
+                        if ($prop.Attributes["fromPath"])   { $valParts += "Quelle: $($prop.Attributes['fromPath'].Value)" }
+                        if ($prop.Attributes["value"])      { $valParts += "Wert: $($prop.Attributes['value'].Value)" }
+                        $cleanGppVal = $valParts -join " | "
+
+                        $descLines = @("GPP OBJEKT: $itemName", "TYP: $itemType", "AKTION: $actionText", "--------------------------------------------------")
+                        foreach ($att in $prop.Attributes) { $descLines += " - $($att.Name): $($att.Value)" }
+
+                        $list.Add([PSCustomObject]@{
+                            Scope     = $scope
+                            Category  = $gppCategory
+                            Name      = $itemName
+                            Value     = $cleanGppVal
+                            State     = $actionText
+                            Supported = "Gruppenrichtlinien-Praeferenzen (GPP)"
+                            Explain   = $descLines -join "`r`n"
+                            GpoName   = $GpoDisplayName
+                            Datum     = $dateStr
+                            Uhrzeit   = $timeStr
+                        })
+                    }
+                }
+
+                # 4. Sicherheitsoptionen & Audit
+                $secOptions = $ext.SelectNodes(".//*[local-name()='SecurityOptions']/* | .//*[local-name()='Account']/* | .//*[local-name()='KerberosPolicy']/* | .//*[local-name()='Audit']/* | .//*[local-name()='AuditPolicy']/*")
+                if ($secOptions -and $secOptions.Count -gt 0) {
+                    foreach ($sec in $secOptions) {
+                        $secName = if ($sec.SelectSingleNode("./*[local-name()='Display']/*[local-name()='Name']")) { $sec.SelectSingleNode("./*[local-name()='Display']/*[local-name()='Name']").InnerText.Trim() } elseif ($sec.SelectSingleNode("./*[local-name()='Name']")) { $sec.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim() } else { $sec.LocalName }
+                        $secVal = if ($sec.SelectSingleNode("./*[local-name()='Display']/*[local-name()='DisplayString']")) { $sec.SelectSingleNode("./*[local-name()='Display']/*[local-name()='DisplayString']").InnerText.Trim() } elseif ($sec.SelectSingleNode("./*[local-name()='SettingNumber']")) { $sec.SelectSingleNode("./*[local-name()='SettingNumber']").InnerText.Trim() } elseif ($sec.SelectSingleNode("./*[local-name()='SettingBoolean']")) { $sec.SelectSingleNode("./*[local-name()='SettingBoolean']").InnerText.Trim() } else { $sec.InnerText.Trim() }
+
+                        if (-not [string]::IsNullOrWhiteSpace($secVal) -and $secVal -ne $secName) {
+                            $list.Add([PSCustomObject]@{
+                                Scope     = $scope
+                                Category  = "Sicherheitseinstellungen / Sicherheitsoptionen"
+                                Name      = $secName
+                                Value     = $secVal
+                                State     = "Konfiguriert"
+                                Supported = "Windows Sicherheitsrichtlinie"
+                                Explain   = "Sicherheitsoption im Bereich $scope.`r`nRichtlinie: $secName"
+                                GpoName   = $GpoDisplayName
+                                Datum     = $dateStr
+                                Uhrzeit   = $timeStr
+                            })
+                        }
+                    }
+                }
+
+                # 5. Benutzerrechte
+                $userRights = $ext.SelectNodes(".//*[local-name()='UserRightsAssignment']")
+                if ($userRights -and $userRights.Count -gt 0) {
+                    foreach ($ur in $userRights) {
+                        $rightName = if ($ur.SelectSingleNode("./*[local-name()='Name']")) { $ur.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim() } else { $ur.LocalName }
+                        $members = ($ur.SelectNodes(".//*[local-name()='Member']/*[local-name()='Name']").InnerText -join ", ")
+                        if (-not [string]::IsNullOrWhiteSpace($members)) {
+                            $list.Add([PSCustomObject]@{
+                                Scope     = $scope
+                                Category  = "Sicherheitseinstellungen / Zuweisen von Benutzerrechten"
+                                Name      = $rightName
+                                Value     = $members
+                                State     = "Zugewiesen"
+                                Supported = "Benutzerrechte-Richtlinie"
+                                Explain   = "Zugewiesene Konten / Gruppen fuer '$rightName':`r`n$members"
+                                GpoName   = $GpoDisplayName
+                                Datum     = $dateStr
+                                Uhrzeit   = $timeStr
+                            })
+                        }
+                    }
+                }
+
+                # 6. Registry-Einstellungen
+                $regNodes = $ext.SelectNodes(".//*[local-name()='RegistrySetting']")
+                if ($regNodes -and $regNodes.Count -gt 0) {
+                    foreach ($reg in $regNodes) {
+                        $keyPath = if ($reg.SelectSingleNode("./*[local-name()='KeyPath']")) { $reg.SelectSingleNode("./*[local-name()='KeyPath']").InnerText.Trim() } else { "" }
+                        $valName = if ($reg.SelectSingleNode("./*[local-name()='ValueName']")) { $reg.SelectSingleNode("./*[local-name()='ValueName']").InnerText.Trim() } else { "(Standard)" }
+                        $valData = if ($reg.SelectSingleNode("./*[local-name()='Value']")) { $reg.SelectSingleNode("./*[local-name()='Value']").InnerText.Trim() } else { "" }
+                        $regType = if ($reg.SelectSingleNode("./*[local-name()='Type']")) { $reg.SelectSingleNode("./*[local-name()='Type']").InnerText.Trim() } else { "REG_SZ" }
+
+                        $list.Add([PSCustomObject]@{
+                            Scope     = $scope
+                            Category  = "Registry-Richtlinie"
+                            Name      = "$keyPath\$valName"
+                            Value     = "$valData ($regType)"
+                            State     = "Aktiviert"
+                            Supported = "Registry-Eintrag"
+                            Explain   = "Registry: $keyPath\$valName = $valData ($regType)"
+                            GpoName   = $GpoDisplayName
+                            Datum     = $dateStr
+                            Uhrzeit   = $timeStr
+                        })
+                    }
+                }
+            }
+        }
+
+        Parse-GpoSection $xml.GPO.Computer "Computer"
+        Parse-GpoSection $xml.GPO.User "User"
+
+        return $list
+    }
+
+    # =========================================================================
+    # LOGIK TAB 1: ADSI GPO-Uebersicht & DDP-Integritaetspruefung
     # =========================================================================
     function Update-OverviewDisplay {
         if ($isClosing -or $form.IsDisposed -or $gridOvMaster.IsDisposed) { return }
@@ -877,7 +1106,7 @@ function Show-Tool15 {
         if ($gridOvMaster.Columns["GUID"]) { $gridOvMaster.Columns["GUID"].Visible = $false }
         if ($gridOvMaster.Columns["WMI Query"]) { $gridOvMaster.Columns["WMI Query"].Visible = $false }
 
-        $lblLegendOverview.Text = "Status: $($arr.Count) von $($rawOverviewList.Count) GPOs  |  [Blau/Lila] Default GPO  |  [Gruen] OK  |  [Rot] Nicht OK"
+        $lblLegendOverview.Text = "Status: $($arr.Count) von $($rawOverviewList.Count) GPOs  |  [Blau] Echte Default GPO  |  [Orange] DDP-Integritaetswarnung  |  [Gruen] OK  |  [Rot] Nicht OK"
     }
 
     function Invoke-LoadOverview {
@@ -890,15 +1119,10 @@ function Show-Tool15 {
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         [System.Windows.Forms.Application]::DoEvents()
 
-        $wmiSearcher = $null
-        $wmiResults = $null
-        $linkSearcher = $null
-        $ouResults = $null
-        $gpoSearcher = $null
-        $gpoResults = $null
-        $wmiRoot = $null
-        $linkRoot = $null
-        $gpoRoot = $null
+        $wmiSearcher = $null; $wmiResults = $null
+        $linkSearcher = $null; $ouResults = $null
+        $gpoSearcher = $null; $gpoResults = $null
+        $wmiRoot = $null; $linkRoot = $null; $gpoRoot = $null
 
         try {
             $gpoLinksCache.Clear()
@@ -950,7 +1174,7 @@ function Show-Tool15 {
                 }
             }
 
-            # 2b. Site-Verlinkungen pruefen
+            # 2b. Site-Verlinkungen
             try {
                 $configDN = ([ADSI]"LDAP://RootDSE").configurationNamingContext.Value
                 $siteRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=Sites,$configDN")
@@ -972,12 +1196,10 @@ function Show-Tool15 {
                         }
                     }
                 }
-                $siteResults.Dispose()
-                $siteSearcher.Dispose()
-                $siteRoot.Dispose()
+                $siteResults.Dispose(); $siteSearcher.Dispose(); $siteRoot.Dispose()
             } catch {}
 
-            # 3. GPO Container
+            # 3. GPO Container & DDP-Integritaetspruefung
             $gpoRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=Policies,CN=System,$domainDN")
             $gpoSearcher = [System.DirectoryServices.DirectorySearcher]::new($gpoRoot)
             $gpoSearcher.Filter = "(objectClass=groupPolicyContainer)"
@@ -987,6 +1209,7 @@ function Show-Tool15 {
             $totalGpos = $gpoResults.Count
             $pbarGlobal.Maximum = [Math]::Max(1, $totalGpos)
             $currentIndex = 0
+            $ddpConflictWarnings = [System.Collections.Generic.List[string]]::new()
 
             foreach ($g in $gpoResults) {
                 $currentIndex++
@@ -996,24 +1219,45 @@ function Show-Tool15 {
                 $flags = if ($g.Properties["flags"]) { [int]$g.Properties["flags"][0] } else { 0 }
 
                 $pbarGlobal.Value = $currentIndex
-                $lblProgressInfo.Text = "Lese GPOs ein ($currentIndex / $totalGpos): $displayName"
+                $lblProgressInfo.Text = "Lese GPO ($currentIndex / $totalGpos): $displayName"
                 if ($currentIndex % 4 -eq 0) { [System.Windows.Forms.Application]::DoEvents() }
 
                 $userStatus = if (($flags -band 1) -eq 1) { "Deaktiviert" } else { "Aktiviert" }
                 $compStatus = if (($flags -band 2) -eq 2) { "Deaktiviert" } else { "Aktiviert" }
 
-                $isDefaultGPO = ($cleanGuid -in @("31B2F340-016D-11D2-945F-00C04FB984F9", "6AC1786C-016F-11D2-945F-00C04FB984F9")) -or 
-                                ($displayName -match "^Default Domain Policy$" -or $displayName -match "^Default Domain Controllers Policy$")
-
-                $overallStatus = if ($isDefaultGPO) {
-                    "Sonderstellung (Default GPO)"
-                } else {
+                # Strikte Pruefung auf die echte Microsoft DDP- & DDCP-Standard GUID
+                $overallStatus = ""
+                if ($cleanGuid -eq $script:StandardDdpGuid) {
+                    if ($displayName -eq "Default Domain Policy") {
+                        $overallStatus = "Sonderstellung (Default GPO)"
+                    } else {
+                        $overallStatus = "WARNUNG: Original DDP-GUID, aber umbenannt!"
+                        $ddpConflictWarnings.Add("Original-GUID {$cleanGuid} ist umbenannt in: '$displayName'")
+                    }
+                }
+                elseif ($displayName -like "*Default Domain Policy*") {
+                    $overallStatus = "WARNUNG: Namensduplikat (Keine Standard-GUID!)"
+                    $ddpConflictWarnings.Add("GPO '$displayName' traegt DDP-Namen, hat aber fremde GUID: {$cleanGuid}")
+                }
+                elseif ($cleanGuid -eq $script:StandardDdcpGuid) {
+                    if ($displayName -eq "Default Domain Controllers Policy") {
+                        $overallStatus = "Sonderstellung (Default GPO)"
+                    } else {
+                        $overallStatus = "WARNUNG: Original DDCP-GUID, aber umbenannt!"
+                        $ddpConflictWarnings.Add("Original-DDCP {$cleanGuid} ist umbenannt in: '$displayName'")
+                    }
+                }
+                elseif ($displayName -like "*Default Domain Controllers Policy*") {
+                    $overallStatus = "WARNUNG: DDCP-Namensduplikat (Keine Standard-GUID!)"
+                    $ddpConflictWarnings.Add("GPO '$displayName' traegt DDCP-Namen, hat aber fremde GUID: {$cleanGuid}")
+                }
+                else {
                     switch ($flags) {
-                        1 { "OK (Nur Computer)" }
-                        2 { "OK (Nur Benutzer)" }
-                        0 { "Nicht OK (Beide aktiviert)" }
-                        3 { "Nicht OK (Vollstaendig deaktiviert)" }
-                        default { "Nicht OK (Unbekannt: $flags)" }
+                        1 { $overallStatus = "OK (Nur Computer)" }
+                        2 { $overallStatus = "OK (Nur Benutzer)" }
+                        0 { $overallStatus = "Nicht OK (Beide aktiviert)" }
+                        3 { $overallStatus = "Nicht OK (Vollstaendig deaktiviert)" }
+                        default { $overallStatus = "Nicht OK (Unbekannt: $flags)" }
                     }
                 }
 
@@ -1053,6 +1297,17 @@ function Show-Tool15 {
 
             Update-OverviewDisplay
             $lblProgressInfo.Text = "GPO-Einlesen abgeschlossen: $($rawOverviewList.Count) GPOs erfolgreich geladen."
+
+            # Warnung bei erkannten DDP-Konflikten anzeigen
+            if ($ddpConflictWarnings.Count -gt 0) {
+                $warnMsg  = "ACHTUNG: Es wurden Unregelmaessigkeiten bei den Standard-Gruppenrichtlinien festgestellt!`r`n`r`n"
+                $warnMsg += "Im Active Directory besitzt nur genau eine GPO die Microsoft-Standard-GUID '{31B2F340-016D-11D2-945F-00C04FB984F9}'.`r`n`r`n"
+                $warnMsg += "Gefundene Konflikte:`r`n"
+                foreach ($w in $ddpConflictWarnings) { $warnMsg += " - $w`r`n" }
+                $warnMsg += "`r`nBetroffene Richtlinien sind in Register 1 farblich in ORANGE als WARNUNG hervorgehoben."
+                
+                [System.Windows.Forms.MessageBox]::Show($warnMsg, "Integritaets-Warnung Default Domain Policy", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            }
         } catch {
             $lblLegendOverview.Text = "Fehler: $($_.Exception.Message)"
             $lblProgressInfo.Text = "Fehler beim Einlesen: $($_.Exception.Message)"
@@ -1140,18 +1395,19 @@ function Show-Tool15 {
                 $pbarGlobal.Value = 70
                 [System.Windows.Forms.Application]::DoEvents()
 
-                # UI ueberall aktualisieren
                 Update-OverviewDisplay
                 Update-BackupGridDisplay
                 Update-SettingsGpoDropdown
 
-                # Dropdowns fuer Tab 4 aktualisieren
                 $comboGpo1.Items.Clear()
                 $comboGpo2.Items.Clear()
                 foreach ($it in $rawOverviewList) {
                     [void]$comboGpo1.Items.Add($it."GPO Name")
                     [void]$comboGpo2.Items.Add($it."GPO Name")
                 }
+                [void]$comboGpo1.Items.Add($script:DdpBaselineName)
+                [void]$comboGpo2.Items.Add($script:DdpBaselineName)
+
                 if ($comboGpo1.Items.Count -gt 0) { $comboGpo1.SelectedIndex = 0 }
                 if ($comboGpo2.Items.Count -gt 1) { $comboGpo2.SelectedIndex = 1 }
 
@@ -1171,9 +1427,15 @@ function Show-Tool15 {
         if ($isClosing -or $form.IsDisposed -or $gridOvMaster.IsDisposed) { return }
         foreach ($row in $gridOvMaster.Rows) {
             $status = [string]$row.Cells["Gesamt-Status"].Value
-            $gpoName = [string]$row.Cells["GPO Name"].Value
 
-            if ($status -match "Sonderstellung" -or $gpoName -match "^Default Domain Policy$" -or $gpoName -match "^Default Domain Controllers Policy$") {
+            if ($status -match "^WARNUNG") {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 238, 204)
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(180, 50, 0)
+                $row.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(255, 210, 160)
+                $row.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::Black
+                $row.DefaultCellStyle.Font = New-Object System.Drawing.Font($gridOvMaster.Font, [System.Drawing.FontStyle]::Bold)
+            }
+            elseif ($status -match "Sonderstellung") {
                 $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(232, 238, 255)
                 $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(0, 45, 135)
                 $row.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(200, 215, 255)
@@ -1280,298 +1542,18 @@ function Show-Tool15 {
     })
 
     # =========================================================================
-    # PRAEZISER XML-PARSER (Trennt Parameter-Werte strikt von Explain-Texten)
+    # LOGIK TAB 2: GPO Settings Inspector & Lazy Loading
     # =========================================================================
-    function Get-ParsedGpoSettings {
-        param([string]$GpoId, [string]$GpoDisplayName)
-
-        $dateStr = Get-Date -Format "yyyyMMdd"
-        $timeStr = Get-Date -Format "HHmm"
-        $list = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-        [xml]$xml = Get-GPOReport -Guid $GpoId -ReportType Xml -ErrorAction Stop
-
-        function Parse-GpoSection ($sectionNode, $scope) {
-            if ($null -eq $sectionNode -or -not $sectionNode.ExtensionData) { return }
-
-            foreach ($ext in $sectionNode.ExtensionData.Extension) {
-                $extType = if ($ext.type) { $ext.type } else { $ext.LocalName }
-                $extCategory = if ($ext.Name) { $ext.Name } else { "Erweiterung" }
-
-                # 1. Administrative Vorlagen & Richtlinien (<Policy>)
-                $policies = $ext.SelectNodes(".//*[local-name()='Policy']")
-                if ($policies -and $policies.Count -gt 0) {
-                    foreach ($p in $policies) {
-                        $pName = if ($p.SelectSingleNode("./*[local-name()='Name']")) { $p.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim() } elseif ($p.Name) { $p.Name.Trim() } else { "Unbenannte Richtlinie" }
-                        $rawState = if ($p.SelectSingleNode("./*[local-name()='State']")) { $p.SelectSingleNode("./*[local-name()='State']").InnerText.Trim() } elseif ($p.State) { $p.State.Trim() } else { "Enabled" }
-                        $pState = switch ($rawState) { "Enabled" { "Aktiviert" } "Disabled" { "Deaktiviert" } default { $rawState } }
-                        $pCat = if ($p.SelectSingleNode("./*[local-name()='Category']")) { $p.SelectSingleNode("./*[local-name()='Category']").InnerText.Trim() } else { $extCategory }
-                        
-                        $pSupported = if ($p.SelectSingleNode("./*[local-name()='Supported' or local-name()='SupportedOn']")) {
-                            $p.SelectSingleNode("./*[local-name()='Supported' or local-name()='SupportedOn']").InnerText.Trim()
-                        } else { "Keine Angabe" }
-
-                        $pExplain = if ($p.SelectSingleNode("./*[local-name()='Explain' or local-name()='ExplainText']")) {
-                            $p.SelectSingleNode("./*[local-name()='Explain' or local-name()='ExplainText']").InnerText.Trim()
-                        } else { "Keine Erklaerung in der Richtlinienvorlage hinterlegt." }
-
-                        $ignoredTags = @("Name", "State", "Explain", "ExplainText", "Supported", "SupportedOn", "Category", "Text")
-                        $paramValues = @()
-
-                        foreach ($child in $p.ChildNodes) {
-                            if ($child.LocalName -in $ignoredTags) { continue }
-
-                            $valNodes = $child.SelectNodes(".//*[local-name()='Value' or local-name()='Data' or local-name()='Setting' or local-name()='Decimal' or local-name()='String']")
-                            $nameNode = $child.SelectSingleNode("./*[local-name()='Name' or local-name()='Label']")
-                            $optLabel = if ($nameNode) { $nameNode.InnerText.Trim() } else { "" }
-
-                            $extractedList = @()
-                            if ($valNodes -and $valNodes.Count -gt 0) {
-                                foreach ($vn in $valNodes) {
-                                    if (-not [string]::IsNullOrWhiteSpace($vn.InnerText)) {
-                                        $extractedList += $vn.InnerText.Trim()
-                                    }
-                                }
-                            }
-                            elseif ($child.Attributes["value"]) {
-                                $extractedList += $child.Attributes["value"].Value.Trim()
-                            }
-                            elseif (-not [string]::IsNullOrWhiteSpace($child.InnerText) -and $child.ChildNodes.Count -le 1) {
-                                $extractedList += $child.InnerText.Trim()
-                            }
-
-                            if ($extractedList.Count -gt 0) {
-                                $joinedVals = $extractedList -join ", "
-                                if (-not [string]::IsNullOrWhiteSpace($optLabel) -and $optLabel -ne $joinedVals) {
-                                    $paramValues += "$($optLabel): $($joinedVals)"
-                                } else {
-                                    $paramValues += "$joinedVals"
-                                }
-                            }
-                        }
-
-                        $cleanValue = if ($paramValues.Count -gt 0) { $paramValues -join " | " } else { $pState }
-
-                        $list.Add([PSCustomObject]@{
-                            Scope     = $scope
-                            Category  = $pCat
-                            Name      = $pName
-                            Value     = $cleanValue
-                            State     = $pState
-                            Supported = $pSupported
-                            Explain   = $pExplain
-                            GpoName   = $GpoDisplayName
-                            Datum     = $dateStr
-                            Uhrzeit   = $timeStr
-                        })
-                    }
-                }
-
-                # 2. Systemdienste (Print Spooler etc.)
-                $services = $ext.SelectNodes(".//*[local-name()='SystemServices'] | .//*[local-name()='Service']")
-                if ($services -and $services.Count -gt 0) {
-                    foreach ($svc in $services) {
-                        $svcName = if ($svc.SelectSingleNode("./*[local-name()='Display']/*[local-name()='Name']")) {
-                            $svc.SelectSingleNode("./*[local-name()='Display']/*[local-name()='Name']").InnerText.Trim()
-                        } elseif ($svc.SelectSingleNode("./*[local-name()='Name']")) {
-                            $svc.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim()
-                        } else { "Systemdienst" }
-
-                        $mode = if ($svc.SelectSingleNode("./*[local-name()='StartupMode']")) {
-                            $svc.SelectSingleNode("./*[local-name()='StartupMode']").InnerText.Trim()
-                        } elseif ($svc.SelectSingleNode("./*[local-name()='Mode']")) {
-                            $svc.SelectSingleNode("./*[local-name()='Mode']").InnerText.Trim()
-                        } else { "Konfiguriert" }
-
-                        $modeDE = switch ($mode) {
-                            "Disabled"  { "Deaktiviert (Disabled)" }
-                            "Automatic" { "Automatisch (Automatic)" }
-                            "Manual"    { "Manuell (Manual)" }
-                            default     { $mode }
-                        }
-
-                        $list.Add([PSCustomObject]@{
-                            Scope     = $scope
-                            Category  = "Sicherheitseinstellungen / Systemdienste"
-                            Name      = $svcName
-                            Value     = "Starttyp: $modeDE"
-                            State     = $modeDE
-                            Supported = "Windows Systemdienste"
-                            Explain   = "Startmodus fuer den Windows-Dienst '$svcName': $modeDE"
-                            GpoName   = $GpoDisplayName
-                            Datum     = $dateStr
-                            Uhrzeit   = $timeStr
-                        })
-                    }
-                }
-
-                # 3. Group Policy Preferences (GPP)
-                $gppNodes = $ext.SelectNodes(".//*[local-name()='Properties']")
-                if ($gppNodes -and $gppNodes.Count -gt 0) {
-                    foreach ($prop in $gppNodes) {
-                        $parent = $prop.ParentNode
-                        $itemType = $parent.LocalName
-                        
-                        $gppCategory = switch ($itemType) {
-                            "Drive"               { "Praeferenzen (GPP) / Laufwerkszuordnungen" }
-                            "Shortcut"            { "Praeferenzen (GPP) / Verknuepfungen" }
-                            "File"                { "Praeferenzen (GPP) / Dateien" }
-                            "Folder"              { "Praeferenzen (GPP) / Ordner" }
-                            "Registry"            { "Praeferenzen (GPP) / Registrierung" }
-                            "TaskV2"              { "Praeferenzen (GPP) / Geplante Aufgaben" }
-                            "ImmediateTaskV2"     { "Praeferenzen (GPP) / Sofortige Aufgaben" }
-                            "Group"               { "Praeferenzen (GPP) / Lokale Gruppen" }
-                            "User"                { "Praeferenzen (GPP) / Lokale Benutzer" }
-                            "SharedPrinter"       { "Praeferenzen (GPP) / Netzwerkdrucker" }
-                            "LocalPrinter"        { "Praeferenzen (GPP) / Lokale Drucker" }
-                            "EnvironmentVariable" { "Praeferenzen (GPP) / Umgebungsvariablen" }
-                            default               { "Praeferenzen (GPP) / $itemType" }
-                        }
-
-                        $itemName = if ($parent.Attributes["name"]) {
-                            $parent.Attributes["name"].Value
-                        } elseif ($prop.Attributes["name"]) {
-                            $prop.Attributes["name"].Value
-                        } elseif ($prop.Attributes["path"]) {
-                            $prop.Attributes["path"].Value
-                        } elseif ($prop.Attributes["letter"]) {
-                            "Laufwerk $($prop.Attributes['letter'].Value):"
-                        } else { "GPP $itemType" }
-
-                        $actionCode = if ($prop.Attributes["action"]) { $prop.Attributes["action"].Value } else { "U" }
-                        $actionText = switch ($actionCode) {
-                            "C" { "Erstellen (Create)" }
-                            "U" { "Aktualisieren (Update)" }
-                            "R" { "Ersetzen (Replace)" }
-                            "D" { "Loeschen (Delete)" }
-                            default { $actionCode }
-                        }
-
-                        $valParts = @("Aktion: $actionText")
-                        if ($prop.Attributes["path"])       { $valParts += "Pfad: $($prop.Attributes['path'].Value)" }
-                        if ($prop.Attributes["targetPath"]) { $valParts += "Ziel: $($prop.Attributes['targetPath'].Value)" }
-                        if ($prop.Attributes["fromPath"])   { $valParts += "Quelle: $($prop.Attributes['fromPath'].Value)" }
-                        if ($prop.Attributes["location"])   { $valParts += "Ort: $($prop.Attributes['location'].Value)" }
-                        if ($prop.Attributes["hive"])       { $valParts += "$($prop.Attributes['hive'].Value)\$($prop.Attributes['key'].Value)\$($prop.Attributes['name'].Value)" }
-                        if ($prop.Attributes["value"])      { $valParts += "Wert: $($prop.Attributes['value'].Value) ($($prop.Attributes['type'].Value))" }
-                        if ($prop.Attributes["groupName"])  { $valParts += "Gruppe: $($prop.Attributes['groupName'].Value)" }
-                        if ($prop.Attributes["userName"])   { $valParts += "Benutzer: $($prop.Attributes['userName'].Value)" }
-
-                        $cleanGppVal = $valParts -join " | "
-
-                        $descLines = @("GPP OBJEKT: $itemName", "TYP:        $itemType", "AKTION:     $actionText", "--------------------------------------------------")
-                        foreach ($att in $prop.Attributes) {
-                            $descLines += " - $($att.Name): $($att.Value)"
-                        }
-
-                        $list.Add([PSCustomObject]@{
-                            Scope     = $scope
-                            Category  = $gppCategory
-                            Name      = $itemName
-                            Value     = $cleanGppVal
-                            State     = $actionText
-                            Supported = "Gruppenrichtlinien-Praeferenzen (GPP)"
-                            Explain   = $descLines -join "`r`n"
-                            GpoName   = $GpoDisplayName
-                            Datum     = $dateStr
-                            Uhrzeit   = $timeStr
-                        })
-                    }
-                }
-
-                # 4. Sicherheitsoptionen & Audit
-                $secOptions = $ext.SelectNodes(".//*[local-name()='SecurityOptions']/* | .//*[local-name()='Account']/* | .//*[local-name()='KerberosPolicy']/* | .//*[local-name()='Audit']/* | .//*[local-name()='AuditPolicy']/*")
-                if ($secOptions -and $secOptions.Count -gt 0) {
-                    foreach ($sec in $secOptions) {
-                        $secName = if ($sec.SelectSingleNode("./*[local-name()='Display']/*[local-name()='Name']")) {
-                            $sec.SelectSingleNode("./*[local-name()='Display']/*[local-name()='Name']").InnerText.Trim()
-                        } elseif ($sec.SelectSingleNode("./*[local-name()='Name']")) {
-                            $sec.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim()
-                        } else { $sec.LocalName }
-
-                        $secVal = if ($sec.SelectSingleNode("./*[local-name()='Display']/*[local-name()='DisplayString']")) {
-                            $sec.SelectSingleNode("./*[local-name()='Display']/*[local-name()='DisplayString']").InnerText.Trim()
-                        } elseif ($sec.SelectSingleNode("./*[local-name()='SettingNumber']")) {
-                            $sec.SelectSingleNode("./*[local-name()='SettingNumber']").InnerText.Trim()
-                        } elseif ($sec.SelectSingleNode("./*[local-name()='SettingBoolean']")) {
-                            $sec.SelectSingleNode("./*[local-name()='SettingBoolean']").InnerText.Trim()
-                        } else { $sec.InnerText.Trim() }
-
-                        if (-not [string]::IsNullOrWhiteSpace($secVal) -and $secVal -ne $secName) {
-                            $list.Add([PSCustomObject]@{
-                                Scope     = $scope
-                                Category  = "Sicherheitseinstellungen / Sicherheitsoptionen"
-                                Name      = $secName
-                                Value     = $secVal
-                                State     = "Konfiguriert"
-                                Supported = "Windows Sicherheitsrichtlinie"
-                                Explain   = "Sicherheitsoption im Bereich $scope.`r`nRichtlinie: $secName"
-                                GpoName   = $GpoDisplayName
-                                Datum     = $dateStr
-                                Uhrzeit   = $timeStr
-                            })
-                        }
-                    }
-                }
-
-                # 5. Benutzerrechte (User Rights)
-                $userRights = $ext.SelectNodes(".//*[local-name()='UserRightsAssignment']")
-                if ($userRights -and $userRights.Count -gt 0) {
-                    foreach ($ur in $userRights) {
-                        $rightName = if ($ur.SelectSingleNode("./*[local-name()='Name']")) { $ur.SelectSingleNode("./*[local-name()='Name']").InnerText.Trim() } else { $ur.LocalName }
-                        $members = ($ur.SelectNodes(".//*[local-name()='Member']/*[local-name()='Name']").InnerText -join ", ")
-                        if (-not [string]::IsNullOrWhiteSpace($members)) {
-                            $list.Add([PSCustomObject]@{
-                                Scope     = $scope
-                                Category  = "Sicherheitseinstellungen / Zuweisen von Benutzerrechten"
-                                Name      = $rightName
-                                Value     = $members
-                                State     = "Zugewiesen"
-                                Supported = "Benutzerrechte-Richtlinie"
-                                Explain   = "Zugewiesene Konten / Gruppen fuer '$rightName':`r`n$members"
-                                GpoName   = $GpoDisplayName
-                                Datum     = $dateStr
-                                Uhrzeit   = $timeStr
-                            })
-                        }
-                    }
-                }
-
-                # 6. Registry-Einstellungen
-                $regNodes = $ext.SelectNodes(".//*[local-name()='RegistrySetting']")
-                if ($regNodes -and $regNodes.Count -gt 0) {
-                    foreach ($reg in $regNodes) {
-                        $keyPath = if ($reg.SelectSingleNode("./*[local-name()='KeyPath']")) { $reg.SelectSingleNode("./*[local-name()='KeyPath']").InnerText.Trim() } else { "" }
-                        $valName = if ($reg.SelectSingleNode("./*[local-name()='ValueName']")) { $reg.SelectSingleNode("./*[local-name()='ValueName']").InnerText.Trim() } else { "(Standard)" }
-                        $valData = if ($reg.SelectSingleNode("./*[local-name()='Value']")) { $reg.SelectSingleNode("./*[local-name()='Value']").InnerText.Trim() } else { "" }
-                        $regType = if ($reg.SelectSingleNode("./*[local-name()='Type']")) { $reg.SelectSingleNode("./*[local-name()='Type']").InnerText.Trim() } else { "REG_SZ" }
-
-                        $list.Add([PSCustomObject]@{
-                            Scope     = $scope
-                            Category  = "Registry-Richtlinie"
-                            Name      = "$keyPath\$valName"
-                            Value     = "$valData ($regType)"
-                            State     = "Aktiviert"
-                            Supported = "Registry-Eintrag"
-                            Explain   = "Direkter Registry-Eintrag:`r`nPfad: $keyPath`r`nName: $valName`r`nTyp:  $regType`r`nWert: $valData"
-                            GpoName   = $GpoDisplayName
-                            Datum     = $dateStr
-                            Uhrzeit   = $timeStr
-                        })
-                    }
-                }
-            }
+    $btnBrowseSettingsDir.Add_Click({
+        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dialog.Description = "Waehlen Sie das Export-Verzeichnis fuer die Richtlinien aus:"
+        $dialog.SelectedPath = $txtSettingsExportDir.Text.Trim()
+        if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $txtSettingsExportDir.Text = $dialog.SelectedPath
+            $txtBackupTargetDir.Text = $dialog.SelectedPath
         }
+    })
 
-        Parse-GpoSection $xml.GPO.Computer "Computer"
-        Parse-GpoSection $xml.GPO.User "User"
-
-        return $list
-    }
-
-    # =========================================================================
-    # LOGIK TAB 2: GPO Settings Inspector & Filter-Steuerung (Exakter Sync)
-    # =========================================================================
     function Update-SettingsGpoDropdown {
         if ($isClosing -or $form.IsDisposed -or $comboGpo.IsDisposed) { return }
         $mode = $comboSettingsViewMode.SelectedItem
@@ -1598,7 +1580,14 @@ function Show-Tool15 {
             [void]$comboGpo.Items.Add($g.DisplayName)
         }
 
-        if ($comboGpo.Items.Count -gt 0) {
+        # Bevorzuge die echte Default Domain Policy oder die 1. Einzel-GPO statt '-- ALLE --'
+        if ($comboGpo.Items.Count -gt 1) {
+            $defaultIdx = -1
+            for ($i = 1; $i -lt $comboGpo.Items.Count; $i++) {
+                if ($comboGpo.Items[$i] -eq "Default Domain Policy") { $defaultIdx = $i; break }
+            }
+            if ($defaultIdx -gt 0) { $comboGpo.SelectedIndex = $defaultIdx } else { $comboGpo.SelectedIndex = 1 }
+        } elseif ($comboGpo.Items.Count -gt 0) {
             $comboGpo.SelectedIndex = 0
         }
     }
@@ -1656,7 +1645,7 @@ function Show-Tool15 {
 
         if ($selectedOption.StartsWith("-- ALLE")) {
             $mode = $comboSettingsViewMode.SelectedItem
-            $targetGpos = $allGposCache | Where-Object {
+            $targetGpos = @($allGposCache | Where-Object {
                 $cleanGuid = $_.Id.ToString().Trim('{','}').ToUpper()
                 $isLinked = ($gpoLinksCache.ContainsKey($cleanGuid) -and $gpoLinksCache[$cleanGuid].Count -gt 0)
                 switch ($mode) {
@@ -1664,14 +1653,27 @@ function Show-Tool15 {
                     "Nicht verlinkte GPOs (Unlinked)" { -not $isLinked }
                     default                           { $true }
                 }
-            }
+            })
 
+            $pbarGlobal.Visible = $true
+            $pbarGlobal.Minimum = 0
+            $pbarGlobal.Maximum = [Math]::Max(1, $targetGpos.Count)
+            $pbarGlobal.Value = 0
+
+            $curr = 0
             foreach ($g in $targetGpos) {
+                $curr++
+                $pbarGlobal.Value = $curr
+                $lblProgressInfo.Text = "Lese Richtlinien-Details ($curr / $($targetGpos.Count)): $($g.DisplayName)"
+                [System.Windows.Forms.Application]::DoEvents()
                 try {
                     $items = Get-ParsedGpoSettings -GpoId $g.Id -GpoDisplayName $g.DisplayName
                     foreach ($item in $items) { $rawSettingsList.Add($item) }
                 } catch {}
             }
+
+            $pbarGlobal.Visible = $false
+            $lblProgressInfo.Text = "Bereit."
         } else {
             try {
                 $gpo = $allGposCache | Where-Object { $_.DisplayName -eq $selectedOption } | Select-Object -First 1
@@ -1714,7 +1716,7 @@ function Show-Tool15 {
             [System.Windows.Forms.MessageBox]::Show("Keine Daten zum Exportieren vorhanden.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             return
         }
-        $targetBase = $txtBackupTargetDir.Text.Trim()
+        $targetBase = $txtSettingsExportDir.Text.Trim()
         if ([string]::IsNullOrWhiteSpace($targetBase)) { $targetBase = "C:\Install\Backup\GPO" }
         if (-not (Test-Path $targetBase)) { New-Item -ItemType Directory -Path $targetBase -Force | Out-Null }
 
@@ -1727,7 +1729,7 @@ function Show-Tool15 {
     })
 
     # =========================================================================
-    # LOGIK TAB 3: GPO Backup & Audit (HTML-Exporte fuer Auswahl & Alle)
+    # LOGIK TAB 3: GPO Backup & Audit (Schneller LDAP-Cache)
     # =========================================================================
     $btnBrowseFolder.Add_Click({
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -1735,6 +1737,7 @@ function Show-Tool15 {
         $dialog.SelectedPath = $txtBackupTargetDir.Text.Trim()
         if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $txtBackupTargetDir.Text = $dialog.SelectedPath
+            $txtSettingsExportDir.Text = $dialog.SelectedPath
         }
     })
 
@@ -1778,6 +1781,7 @@ function Show-Tool15 {
     $comboBackupFilter.Add_SelectedIndexChanged({ Update-BackupGridDisplay })
     $txtBackupSearch.Add_TextChanged({ Update-BackupGridDisplay })
 
+    # Laedt blitzschnell ueber den ADSI-Cache ohne XML-Reports abzufragen
     function Invoke-LoadGpos {
         if ($isClosing -or $form.IsDisposed -or $gridGpos.IsDisposed) { return }
         $gridGpos.DataSource = $null
@@ -1944,7 +1948,7 @@ function Show-Tool15 {
         [System.Windows.Forms.MessageBox]::Show("GPO-Liste erfolgreich exportiert!`n`nPfad: $csvFile", "Export abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     })
 
-    # 1. HTML Report Export: NUR fuer die in der Tabelle markierte GPO
+    # HTML Report fuer die einzeln markierte GPO
     $btnExportSelectedHtml.Add_Click({
         $targetBase = $txtBackupTargetDir.Text.Trim()
         if ([string]::IsNullOrWhiteSpace($targetBase)) { $targetBase = "C:\Install\Backup\GPO" }
@@ -1977,7 +1981,7 @@ function Show-Tool15 {
         }
     })
 
-    # 2. HTML Report Export: Fuer alle gefilterten GPOs der aktuellen Ansicht
+    # HTML Report fuer alle GPOs der aktuellen Ansicht
     $btnExportAllHtml.Add_Click({
         $targetBase = $txtBackupTargetDir.Text.Trim()
         if ([string]::IsNullOrWhiteSpace($targetBase)) { $targetBase = "C:\Install\Backup\GPO" }
@@ -2004,12 +2008,22 @@ function Show-Tool15 {
         $htmlDir = Join-Path $targetBase "GPO_HTML_Reports_${modeFolder}_${timestamp}"
         if (-not (Test-Path $htmlDir)) { New-Item -ItemType Directory -Path $htmlDir -Force | Out-Null }
 
+        $pbarGlobal.Visible = $true
+        $pbarGlobal.Minimum = 0
+        $pbarGlobal.Maximum = [Math]::Max(1, $displayedItems.Count)
+        $pbarGlobal.Value = 0
+
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === Starte HTML-Massenexport fuer $($displayedItems.Count) GPOs ('$filterMode') ===`r`n")
         $form.Refresh()
 
         $exportedCount = 0
+        $cur = 0
         foreach ($item in $displayedItems) {
+            $cur++
+            $pbarGlobal.Value = $cur
+            $lblProgressInfo.Text = "Exportiere HTML ($cur / $($displayedItems.Count)): $($item.'GPO Name')"
+            [System.Windows.Forms.Application]::DoEvents()
             try {
                 $safeName = $item."GPO Name" -replace '[\\/:*?"<>|]', '_'
                 $guid = $item."GPO ID (GUID)"
@@ -2021,6 +2035,8 @@ function Show-Tool15 {
             }
         }
 
+        $pbarGlobal.Visible = $false
+        $lblProgressInfo.Text = "Bereit."
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
         $txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] === $exportedCount HTML-Berichte erfolgreich erstellt in: $htmlDir ===`r`n")
 
@@ -2031,7 +2047,7 @@ function Show-Tool15 {
     })
 
     # =========================================================================
-    # LOGIK TAB 4: GPO-Vergleich (Diff Engine mit Wert-Vergleich)
+    # LOGIK TAB 4: GPO-Vergleich (Diff Engine)
     # =========================================================================
     function Update-CompareGridDisplay {
         if ($isClosing -or $form.IsDisposed -or $gridCompare.IsDisposed) { return }
@@ -2090,7 +2106,7 @@ function Show-Tool15 {
         }
     }
 
-    $btnCompare.Add_Click({
+    function Invoke-GpoCompare {
         $gpoName1 = $comboGpo1.SelectedItem
         $gpoName2 = $comboGpo2.SelectedItem
 
@@ -2104,17 +2120,33 @@ function Show-Tool15 {
         $rawCompareList.Clear()
 
         try {
-            $gpoObj1 = Get-GPO -Name $gpoName1 -ErrorAction Stop
-            $gpoObj2 = Get-GPO -Name $gpoName2 -ErrorAction Stop
+            $list1 = if ($gpoName1 -eq $script:DdpBaselineName) {
+                Get-DefaultDomainPolicyBaseline
+            } else {
+                $gpoObj1 = $allGposCache | Where-Object { $_.DisplayName -eq $gpoName1 } | Select-Object -First 1
+                if (-not $gpoObj1) { $gpoObj1 = Get-GPO -Name $gpoName1 -ErrorAction Stop }
+                Get-ParsedGpoSettings -GpoId $gpoObj1.Id -GpoDisplayName $gpoName1
+            }
 
-            $list1 = Get-ParsedGpoSettings -GpoId $gpoObj1.Id -GpoDisplayName $gpoName1
-            $list2 = Get-ParsedGpoSettings -GpoId $gpoObj2.Id -GpoDisplayName $gpoName2
+            $list2 = if ($gpoName2 -eq $script:DdpBaselineName) {
+                Get-DefaultDomainPolicyBaseline
+            } else {
+                $gpoObj2 = $allGposCache | Where-Object { $_.DisplayName -eq $gpoName2 } | Select-Object -First 1
+                if (-not $gpoObj2) { $gpoObj2 = Get-GPO -Name $gpoName2 -ErrorAction Stop }
+                Get-ParsedGpoSettings -GpoId $gpoObj2.Id -GpoDisplayName $gpoName2
+            }
 
             $dict1 = @{}
-            foreach ($item in $list1) { $dict1["$($item.Scope)|$($item.Category)|$($item.Name)"] = $item }
+            foreach ($item in $list1) { 
+                $normKey = Get-NormalizedPolicyKey $item
+                $dict1[$normKey] = $item 
+            }
 
             $dict2 = @{}
-            foreach ($item in $list2) { $dict2["$($item.Scope)|$($item.Category)|$($item.Name)"] = $item }
+            foreach ($item in $list2) { 
+                $normKey = Get-NormalizedPolicyKey $item
+                $dict2[$normKey] = $item 
+            }
 
             $allKeys = [System.Collections.Generic.HashSet[string]]::new()
             foreach ($k in $dict1.Keys) { [void]$allKeys.Add($k) }
@@ -2178,6 +2210,23 @@ function Show-Tool15 {
             [System.Windows.Forms.MessageBox]::Show("Fehler beim Vergleich: $_", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
             $lblCompareStatus.Text = "Fehler beim Einlesen der GPOs."
         }
+    }
+
+    $btnCompare.Add_Click({ Invoke-GpoCompare })
+
+    $btnCompareDdpBaseline.Add_Click({
+        # Bevorzuge die Richtlinie mit der echten Standard-DDP GUID
+        $realDdp = $allGposCache | Where-Object { $_.Id.ToString().Trim('{','}').ToUpper() -eq $script:StandardDdpGuid } | Select-Object -First 1
+        if ($realDdp) {
+            $comboGpo1.SelectedItem = $realDdp.DisplayName
+        } else {
+            $ddpCandidate = $comboGpo1.Items | Where-Object { $_ -match "^Default Domain Policy$" } | Select-Object -First 1
+            if ($ddpCandidate) { $comboGpo1.SelectedItem = $ddpCandidate } else { $comboGpo1.SelectedIndex = 0 }
+        }
+
+        $comboGpo2.SelectedItem = $script:DdpBaselineName
+        $chkOnlyDiffs.Checked = $false
+        Invoke-GpoCompare
     })
 
     $chkOnlyDiffs.Add_CheckedChanged({ Update-CompareGridDisplay })
@@ -2242,31 +2291,35 @@ function Show-Tool15 {
     $form.Add_Shown({
         $txtBackupTargetDir.SelectionStart = 0
         $txtBackupTargetDir.SelectionLength = 0
+        $txtSettingsExportDir.SelectionStart = 0
+        $txtSettingsExportDir.SelectionLength = 0
 
-        # Alle GPOs cachen
+        # Alle GPOs einmalig cachen
         $allGposCache.Clear()
         $gpos = Get-GPO -All | Sort-Object DisplayName
         foreach ($g in $gpos) { [void]$allGposCache.Add($g) }
 
-        # Dropdowns fuer Tab 4 befuellen
+        # Dropdowns fuer Tab 4 befuellen (inkl. MS DDP Baseline)
         $comboGpo1.Items.Clear()
         $comboGpo2.Items.Clear()
         foreach ($g in $allGposCache) {
             [void]$comboGpo1.Items.Add($g.DisplayName)
             [void]$comboGpo2.Items.Add($g.DisplayName)
         }
+        [void]$comboGpo1.Items.Add($script:DdpBaselineName)
+        [void]$comboGpo2.Items.Add($script:DdpBaselineName)
 
         if ($comboGpo1.Items.Count -gt 0) { $comboGpo1.SelectedIndex = 0 }
         if ($comboGpo2.Items.Count -gt 1) { $comboGpo2.SelectedIndex = 1 }
 
-        # Register 1 laden
+        # 1. Register 1 laden (Schnelle LDAP-Struktur)
         Invoke-LoadOverview
 
-        # Register 2 initialisieren
+        # 2. Register 2 vorbereiten (Lazy Loading: laedt nur die ausgewaehlte Einzel-GPO, kein Freeze!)
         Update-SettingsGpoDropdown
         Invoke-LoadSettings
 
-        # Register 3 initialisieren
+        # 3. Register 3 vorbereiten (Sofortige Bestandsliste ueber LDAP-Cache, 0.01 s statt 60 s!)
         Invoke-LoadGpos
     })
 
