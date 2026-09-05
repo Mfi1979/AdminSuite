@@ -1,9 +1,11 @@
 <#
 ==================================================================================
  Tool 15: Active Directory GPO Enterprise Suite
- Version: 1.6.5 (Call-Operator-Fix, HTML-Export getrennt, Tab 3, ISE-Safe)
+ Version: 1.7.0 (Snapshot Save/Load, Live-Fortschrittsbalken, ISE-Safe, ASCII)
  
  Register 1: GPO Uebersicht & Verlinkungs-Analyse
+             - Button "GPOs einlesen" mit Fortschrittsbalken und Live-Status
+             - Buttons "Snapshot speichern" & "Snapshot laden" (.gposnap)
              - Schnelle ADSI/LDAP-Abfrage aller GPOs, WMI-Filter & OU-Verlinkungen
              - Spaltenbreiten automatisch an Inhalt angepasst (AllCells)
              - Spaltenbezeichnungen "Benutzer" und "Computer"
@@ -22,10 +24,10 @@
  
  Register 3: GPO Backup & Verknuepfungs-Audit
              - HTML (Ausgewaehlt): HTML-Bericht der markierten GPO erstellen & oeffnen
-             - HTML (Alle): HTML-Massenexport aller gefilterten GPOs in Unterordner
+             - HTML (Gefilterte): HTML-Massenexport aller gefilterten GPOs in Unterordner
              - Ansichts-Filter: Alle / Nur verlinkte / Nicht verlinkte (Unlinked)
              - Live-Suchfeld fuer schnelle GPO-Filterung
-             - Selektives Backup (z.B. nur alle 13 ungelinkten GPOs sichern)
+             - Selektives Backup (z.B. nur ungelinkte GPOs sichern)
              - CSV-Export fuer Bestandsliste
              - Voll-dynamisches SplitContainer-Layout
              - Erstellung von 'GPO_Link_Info.txt' pro GPO-Backup
@@ -51,7 +53,7 @@ try {
     [System.Windows.Forms.Application]::EnableVisualStyles()
 } catch {}
 
-$script:ToolVersion = "v1.6.5"
+$script:ToolVersion = "v1.7.0"
 
 function Show-Tool15 {
     [CmdletBinding()]
@@ -80,10 +82,31 @@ function Show-Tool15 {
     # --- Hauptfenster ---
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - $script:ToolVersion"
-    $form.Size = New-Object System.Drawing.Size(1680, 930)
+    $form.Size = New-Object System.Drawing.Size(1680, 950)
     $form.StartPosition = "CenterScreen"
     $form.MinimumSize = New-Object System.Drawing.Size(1250, 750)
     $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+
+    # --- Untere Statusleiste fuer Fortschrittsanzeige ---
+    $panelBottomStatus = New-Object System.Windows.Forms.Panel
+    $panelBottomStatus.Dock = [System.Windows.Forms.DockStyle]::Bottom
+    $panelBottomStatus.Height = 30
+    $panelBottomStatus.BackColor = [System.Drawing.Color]::FromArgb(240, 242, 246)
+    $panelBottomStatus.Padding = New-Object System.Windows.Forms.Padding(10, 4, 10, 4)
+
+    $lblProgressInfo = New-Object System.Windows.Forms.Label
+    $lblProgressInfo.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $lblProgressInfo.Text = "Bereit."
+    $lblProgressInfo.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $lblProgressInfo.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
+
+    $pbarGlobal = New-Object System.Windows.Forms.ProgressBar
+    $pbarGlobal.Dock = [System.Windows.Forms.DockStyle]::Right
+    $pbarGlobal.Width = 320
+    $pbarGlobal.Visible = $false
+
+    $panelBottomStatus.Controls.Add($lblProgressInfo)
+    $panelBottomStatus.Controls.Add($pbarGlobal)
 
     # --- TabControl mit groesserer Schrift & Polsterung ---
     $tabControl = New-Object System.Windows.Forms.TabControl
@@ -100,11 +123,11 @@ function Show-Tool15 {
 
     $panelOverviewTop = New-Object System.Windows.Forms.Panel
     $panelOverviewTop.Dock = [System.Windows.Forms.DockStyle]::Top
-    $panelOverviewTop.Height = 78
+    $panelOverviewTop.Height = 85
     $panelOverviewTop.BackColor = [System.Drawing.Color]::FromArgb(245, 248, 252)
     $panelOverviewTop.Padding = New-Object System.Windows.Forms.Padding(10)
 
-    # Zeile 1
+    # Zeile 1: Filter, Suche, Einlesen & Snapshot-Buttons
     $lblViewFilter = New-Object System.Windows.Forms.Label
     $lblViewFilter.Text = "Ansicht:"
     $lblViewFilter.Location = New-Object System.Drawing.Point(12, 16)
@@ -112,8 +135,8 @@ function Show-Tool15 {
     $lblViewFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $comboViewMode = New-Object System.Windows.Forms.ComboBox
-    $comboViewMode.Location = New-Object System.Drawing.Point(80, 13)
-    $comboViewMode.Size = New-Object System.Drawing.Size(210, 25)
+    $comboViewMode.Location = New-Object System.Drawing.Point(75, 13)
+    $comboViewMode.Size = New-Object System.Drawing.Size(200, 25)
     $comboViewMode.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
     [void]$comboViewMode.Items.Add("Alle GPOs")
     [void]$comboViewMode.Items.Add("GPOs mit WMI-Filter")
@@ -122,37 +145,50 @@ function Show-Tool15 {
 
     $lblOverviewSearch = New-Object System.Windows.Forms.Label
     $lblOverviewSearch.Text = "Suche:"
-    $lblOverviewSearch.Location = New-Object System.Drawing.Point(305, 16)
+    $lblOverviewSearch.Location = New-Object System.Drawing.Point(285, 16)
     $lblOverviewSearch.AutoSize = $true
     $lblOverviewSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $txtOverviewSearch = New-Object System.Windows.Forms.TextBox
-    $txtOverviewSearch.Location = New-Object System.Drawing.Point(360, 13)
-    $txtOverviewSearch.Size = New-Object System.Drawing.Size(170, 25)
+    $txtOverviewSearch.Location = New-Object System.Drawing.Point(335, 13)
+    $txtOverviewSearch.Size = New-Object System.Drawing.Size(130, 25)
 
-    $btnRefreshOverview = New-Object System.Windows.Forms.Button
-    $btnRefreshOverview.Text = "Neu laden"
-    $btnRefreshOverview.Location = New-Object System.Drawing.Point(545, 10)
-    $btnRefreshOverview.Size = New-Object System.Drawing.Size(100, 30)
-    $btnRefreshOverview.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
+    $btnLoadAdGpos = New-Object System.Windows.Forms.Button
+    $btnLoadAdGpos.Text = "GPOs einlesen"
+    $btnLoadAdGpos.Location = New-Object System.Drawing.Point(475, 10)
+    $btnLoadAdGpos.Size = New-Object System.Drawing.Size(120, 30)
+    $btnLoadAdGpos.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
+    $btnLoadAdGpos.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+
+    $btnSaveSnapshot = New-Object System.Windows.Forms.Button
+    $btnSaveSnapshot.Text = "Snapshot speichern"
+    $btnSaveSnapshot.Location = New-Object System.Drawing.Point(602, 10)
+    $btnSaveSnapshot.Size = New-Object System.Drawing.Size(140, 30)
+    $btnSaveSnapshot.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230)
+
+    $btnLoadSnapshot = New-Object System.Windows.Forms.Button
+    $btnLoadSnapshot.Text = "Snapshot laden"
+    $btnLoadSnapshot.Location = New-Object System.Drawing.Point(748, 10)
+    $btnLoadSnapshot.Size = New-Object System.Drawing.Size(125, 30)
+    $btnLoadSnapshot.BackColor = [System.Drawing.Color]::FromArgb(235, 245, 255)
 
     $btnExportOverviewCsv = New-Object System.Windows.Forms.Button
     $btnExportOverviewCsv.Text = "CSV Export"
-    $btnExportOverviewCsv.Location = New-Object System.Drawing.Point(652, 10)
-    $btnExportOverviewCsv.Size = New-Object System.Drawing.Size(110, 30)
+    $btnExportOverviewCsv.Location = New-Object System.Drawing.Point(880, 10)
+    $btnExportOverviewCsv.Size = New-Object System.Drawing.Size(100, 30)
     $btnExportOverviewCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
 
     $btnPsInfo = New-Object System.Windows.Forms.Button
     $btnPsInfo.Text = "PS- & Tool-Info"
-    $btnPsInfo.Location = New-Object System.Drawing.Point(768, 10)
-    $btnPsInfo.Size = New-Object System.Drawing.Size(120, 30)
+    $btnPsInfo.Location = New-Object System.Drawing.Point(987, 10)
+    $btnPsInfo.Size = New-Object System.Drawing.Size(115, 30)
     $btnPsInfo.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 245)
     $btnPsInfo.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
 
     # Zeile 2: Legende
     $lblLegendOverview = New-Object System.Windows.Forms.Label
     $lblLegendOverview.Text = "Legende:  [Blau/Lila] Default GPO  |  [Gruen] OK (Nur Computer oder Benutzer)  |  [Rot] Nicht OK (Beide aktiv / inaktiv)"
-    $lblLegendOverview.Location = New-Object System.Drawing.Point(12, 48)
+    $lblLegendOverview.Location = New-Object System.Drawing.Point(12, 52)
     $lblLegendOverview.AutoSize = $true
     $lblLegendOverview.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
 
@@ -160,7 +196,9 @@ function Show-Tool15 {
     $panelOverviewTop.Controls.Add($comboViewMode)
     $panelOverviewTop.Controls.Add($lblOverviewSearch)
     $panelOverviewTop.Controls.Add($txtOverviewSearch)
-    $panelOverviewTop.Controls.Add($btnRefreshOverview)
+    $panelOverviewTop.Controls.Add($btnLoadAdGpos)
+    $panelOverviewTop.Controls.Add($btnSaveSnapshot)
+    $panelOverviewTop.Controls.Add($btnLoadSnapshot)
     $panelOverviewTop.Controls.Add($btnExportOverviewCsv)
     $panelOverviewTop.Controls.Add($btnPsInfo)
     $panelOverviewTop.Controls.Add($lblLegendOverview)
@@ -204,7 +242,7 @@ function Show-Tool15 {
     $panelOvLeft.Controls.Add($lblOvMasterTitle)
     $splitOverview.Panel1.Controls.Add($panelOvLeft)
 
-    # Rechte Seite Tab 1
+    # Rechte Seite Tab 1 (Mit 46px Hoehe fuer 2 Zeilen Textumbruch)
     $panelOvRight = New-Object System.Windows.Forms.Panel
     $panelOvRight.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelOvRight.Padding = New-Object System.Windows.Forms.Padding(4, 8, 10, 10)
@@ -401,7 +439,7 @@ function Show-Tool15 {
     $tabSettings.Controls.Add($panelSettingsTop)
 
     # =========================================================================
-    # REGISTER 3: GPO Backup & Verknuepfungs-Audit (Mit getrenntem HTML-Export)
+    # REGISTER 3: GPO Backup & Verknuepfungs-Audit
     # =========================================================================
     $tabBackup = New-Object System.Windows.Forms.TabPage
     $tabBackup.Text = "3. GPO Backup & Verknuepfungs-Status"
@@ -445,7 +483,7 @@ function Show-Tool15 {
 
     # HTML Report fuer alle GPOs der aktuellen Filter-Ansicht
     $btnExportAllHtml = New-Object System.Windows.Forms.Button
-    $btnExportAllHtml.Text = "HTML (Gefilterte)"
+    $btnExportAllHtml.Text = "HTML (Alle)"
     $btnExportAllHtml.Location = New-Object System.Drawing.Point(895, 11)
     $btnExportAllHtml.Size = New-Object System.Drawing.Size(150, 30)
     $btnExportAllHtml.BackColor = [System.Drawing.Color]::FromArgb(255, 238, 220)
@@ -743,7 +781,12 @@ function Show-Tool15 {
     $tabControl.TabPages.Add($tabSettings)
     $tabControl.TabPages.Add($tabBackup)
     $tabControl.TabPages.Add($tabCompare)
+
+    # Statusleiste und TabControl hinzufuegen
     $form.Controls.Add($tabControl)
+    $form.Controls.Add($panelBottomStatus)
+    $panelBottomStatus.SendToBack()
+    $tabControl.BringToFront()
 
     # Lokale Datencontainer
     $rawOverviewList = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -839,9 +882,13 @@ function Show-Tool15 {
 
     function Invoke-LoadOverview {
         if ($isClosing -or $form.IsDisposed) { return }
-        $lblLegendOverview.Text = "Lade AD-Struktur..."
+        
+        $pbarGlobal.Visible = $true
+        $pbarGlobal.Minimum = 0
+        $pbarGlobal.Value = 0
+        $lblProgressInfo.Text = "Lade Active Directory Struktur..."
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-        $form.Refresh()
+        [System.Windows.Forms.Application]::DoEvents()
 
         $wmiSearcher = $null
         $wmiResults = $null
@@ -858,6 +905,9 @@ function Show-Tool15 {
             $rawOverviewList.Clear()
 
             # 1. WMI Filter
+            $lblProgressInfo.Text = "Lese WMI-Filter ein..."
+            [System.Windows.Forms.Application]::DoEvents()
+
             $wmiMap = @{}
             $wmiRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=SOM,CN=WMIPolicy,CN=System,$domainDN")
             $wmiSearcher = [System.DirectoryServices.DirectorySearcher]::new($wmiRoot)
@@ -874,7 +924,10 @@ function Show-Tool15 {
                 }
             } catch {}
 
-            # 2. OU & Domain Verlinkungen (Normalisiert auf GUID ohne Klammern)
+            # 2. OU & Domain Verlinkungen
+            $lblProgressInfo.Text = "Lese Verknuepfungen (OUs, Domaene, Sites) ein..."
+            [System.Windows.Forms.Application]::DoEvents()
+
             $linkRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$domainDN")
             $linkSearcher = [System.DirectoryServices.DirectorySearcher]::new($linkRoot)
             $linkSearcher.Filter = "(|(objectClass=organizationalUnit)(objectClass=domainDNS))"
@@ -931,11 +984,20 @@ function Show-Tool15 {
             $gpoSearcher.PropertiesToLoad.AddRange(@("displayName", "name", "flags", "gPCWQLFilter", "whenCreated", "whenChanged"))
 
             $gpoResults = $gpoSearcher.FindAll()
+            $totalGpos = $gpoResults.Count
+            $pbarGlobal.Maximum = [Math]::Max(1, $totalGpos)
+            $currentIndex = 0
+
             foreach ($g in $gpoResults) {
+                $currentIndex++
                 $rawGuid = $g.Properties["name"][0]
                 $cleanGuid = $rawGuid.Trim('{','}').ToUpper()
                 $displayName = if ($g.Properties["displayname"]) { $g.Properties["displayname"][0] } else { "{$cleanGuid}" }
                 $flags = if ($g.Properties["flags"]) { [int]$g.Properties["flags"][0] } else { 0 }
+
+                $pbarGlobal.Value = $currentIndex
+                $lblProgressInfo.Text = "Lese GPOs ein ($currentIndex / $totalGpos): $displayName"
+                if ($currentIndex % 4 -eq 0) { [System.Windows.Forms.Application]::DoEvents() }
 
                 $userStatus = if (($flags -band 1) -eq 1) { "Deaktiviert" } else { "Aktiviert" }
                 $compStatus = if (($flags -band 2) -eq 2) { "Deaktiviert" } else { "Aktiviert" }
@@ -990,8 +1052,10 @@ function Show-Tool15 {
             }
 
             Update-OverviewDisplay
+            $lblProgressInfo.Text = "GPO-Einlesen abgeschlossen: $($rawOverviewList.Count) GPOs erfolgreich geladen."
         } catch {
             $lblLegendOverview.Text = "Fehler: $($_.Exception.Message)"
+            $lblProgressInfo.Text = "Fehler beim Einlesen: $($_.Exception.Message)"
         } finally {
             if ($wmiResults)   { $wmiResults.Dispose() }
             if ($wmiSearcher)  { $wmiSearcher.Dispose() }
@@ -1002,9 +1066,106 @@ function Show-Tool15 {
             if ($gpoResults)   { $gpoResults.Dispose() }
             if ($gpoSearcher)  { $gpoSearcher.Dispose() }
             if ($gpoRoot)      { $gpoRoot.Dispose() }
+            $pbarGlobal.Visible = $false
             $form.Cursor = [System.Windows.Forms.Cursors]::Default
         }
     }
+
+    # Snapshot speichern
+    $btnSaveSnapshot.Add_Click({
+        if ($rawOverviewList.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Keine GPO-Daten vorhanden. Bitte lesen Sie zuerst die GPOs ein.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return
+        }
+
+        $sfd = New-Object System.Windows.Forms.SaveFileDialog
+        $sfd.Title = "GPO Snapshot speichern"
+        $sfd.Filter = "GPO Snapshot (*.gposnap)|*.gposnap|XML Dateien (*.xml)|*.xml"
+        $sfd.FileName = "GPO_Snapshot_${domainName}_$((Get-Date).ToString('yyyyMMdd_HHmm')).gposnap"
+        $sfd.InitialDirectory = $txtBackupTargetDir.Text.Trim()
+
+        if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            try {
+                $snapshotData = @{
+                    Version       = $script:ToolVersion
+                    Timestamp     = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                    Domain        = $domainName
+                    OverviewList  = @($rawOverviewList)
+                    BackupList    = @($rawBackupList)
+                    GpoLinksCache = $gpoLinksCache
+                }
+                $snapshotData | Export-Clixml -Path $sfd.FileName -Depth 5
+                $lblProgressInfo.Text = "Snapshot erfolgreich gespeichert: $($sfd.FileName)"
+                [System.Windows.Forms.MessageBox]::Show("GPO Snapshot mit $($rawOverviewList.Count) GPOs erfolgreich gespeichert!`n`nDatei: $($sfd.FileName)", "Snapshot gespeichert", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show("Fehler beim Speichern des Snapshots: $_", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+            }
+        }
+    })
+
+    # Snapshot laden
+    $btnLoadSnapshot.Add_Click({
+        $ofd = New-Object System.Windows.Forms.OpenFileDialog
+        $ofd.Title = "GPO Snapshot oeffnen"
+        $ofd.Filter = "GPO Snapshot (*.gposnap;*.xml)|*.gposnap;*.xml|Alle Dateien (*.*)|*.*"
+        $ofd.InitialDirectory = $txtBackupTargetDir.Text.Trim()
+
+        if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            try {
+                $pbarGlobal.Visible = $true
+                $pbarGlobal.Value = 20
+                $lblProgressInfo.Text = "Lade Snapshot-Datei: $($ofd.FileName)..."
+                $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+                [System.Windows.Forms.Application]::DoEvents()
+
+                $snapshotData = Import-Clixml -Path $ofd.FileName -ErrorAction Stop
+
+                if ($null -eq $snapshotData.OverviewList -or $null -eq $snapshotData.GpoLinksCache) {
+                    throw "Die ausgewaehlte Datei enthaelt keine gueltigen GPO-Snapshot-Daten."
+                }
+
+                $rawOverviewList.Clear()
+                foreach ($item in $snapshotData.OverviewList) { [void]$rawOverviewList.Add($item) }
+
+                $gpoLinksCache.Clear()
+                foreach ($k in $snapshotData.GpoLinksCache.Keys) {
+                    $gpoLinksCache[$k] = $snapshotData.GpoLinksCache[$k]
+                }
+
+                $rawBackupList.Clear()
+                if ($snapshotData.BackupList) {
+                    foreach ($b in $snapshotData.BackupList) { [void]$rawBackupList.Add($b) }
+                }
+
+                $pbarGlobal.Value = 70
+                [System.Windows.Forms.Application]::DoEvents()
+
+                # UI ueberall aktualisieren
+                Update-OverviewDisplay
+                Update-BackupGridDisplay
+                Update-SettingsGpoDropdown
+
+                # Dropdowns fuer Tab 4 aktualisieren
+                $comboGpo1.Items.Clear()
+                $comboGpo2.Items.Clear()
+                foreach ($it in $rawOverviewList) {
+                    [void]$comboGpo1.Items.Add($it."GPO Name")
+                    [void]$comboGpo2.Items.Add($it."GPO Name")
+                }
+                if ($comboGpo1.Items.Count -gt 0) { $comboGpo1.SelectedIndex = 0 }
+                if ($comboGpo2.Items.Count -gt 1) { $comboGpo2.SelectedIndex = 1 }
+
+                $pbarGlobal.Value = 100
+                $lblProgressInfo.Text = "Snapshot geladen ($($snapshotData.Timestamp)): $($rawOverviewList.Count) GPOs"
+                [System.Windows.Forms.MessageBox]::Show("Snapshot erfolgreich geladen!`n`nErstellt am: $($snapshotData.Timestamp)`nDomaene:     $($snapshotData.Domain)`nGPOs:        $($rawOverviewList.Count)", "Snapshot aktiv", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show("Fehler beim Laden des Snapshots: $_", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+            } finally {
+                $pbarGlobal.Visible = $false
+                $form.Cursor = [System.Windows.Forms.Cursors]::Default
+            }
+        }
+    })
 
     $gridOvMaster.Add_DataBindingComplete({
         if ($isClosing -or $form.IsDisposed -or $gridOvMaster.IsDisposed) { return }
@@ -1035,7 +1196,7 @@ function Show-Tool15 {
         }
     })
 
-    $btnRefreshOverview.Add_Click({ Invoke-LoadOverview })
+    $btnLoadAdGpos.Add_Click({ Invoke-LoadOverview })
     $comboViewMode.Add_SelectedIndexChanged({ Update-OverviewDisplay })
     $txtOverviewSearch.Add_TextChanged({ Update-OverviewDisplay })
 
@@ -1566,7 +1727,7 @@ function Show-Tool15 {
     })
 
     # =========================================================================
-    # LOGIK TAB 3: GPO Backup & Audit (Mit getrenntem HTML-Export)
+    # LOGIK TAB 3: GPO Backup & Audit (HTML-Exporte fuer Auswahl & Alle)
     # =========================================================================
     $btnBrowseFolder.Add_Click({
         $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -1783,14 +1944,14 @@ function Show-Tool15 {
         [System.Windows.Forms.MessageBox]::Show("GPO-Liste erfolgreich exportiert!`n`nPfad: $csvFile", "Export abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     })
 
-    # HTML Report NUR fuer die markierte GPO
+    # 1. HTML Report Export: NUR fuer die in der Tabelle markierte GPO
     $btnExportSelectedHtml.Add_Click({
         $targetBase = $txtBackupTargetDir.Text.Trim()
         if ([string]::IsNullOrWhiteSpace($targetBase)) { $targetBase = "C:\Install\Backup\GPO" }
         if (-not (Test-Path $targetBase)) { New-Item -ItemType Directory -Path $targetBase -Force | Out-Null }
 
         if ($gridGpos.SelectedRows.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Bitte waehlen Sie eine GPO aus der Tabelle aus.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            [System.Windows.Forms.MessageBox]::Show("Bitte waehlen Sie zuerst eine GPO aus der Tabelle aus.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
             return
         }
 
@@ -1816,7 +1977,7 @@ function Show-Tool15 {
         }
     })
 
-    # HTML Report fuer alle GPOs der aktuellen Filter-Ansicht
+    # 2. HTML Report Export: Fuer alle gefilterten GPOs der aktuellen Ansicht
     $btnExportAllHtml.Add_Click({
         $targetBase = $txtBackupTargetDir.Text.Trim()
         if ([string]::IsNullOrWhiteSpace($targetBase)) { $targetBase = "C:\Install\Backup\GPO" }
@@ -2082,7 +2243,7 @@ function Show-Tool15 {
         $txtBackupTargetDir.SelectionStart = 0
         $txtBackupTargetDir.SelectionLength = 0
 
-        # Alle GPOs einmalig cachen
+        # Alle GPOs cachen
         $allGposCache.Clear()
         $gpos = Get-GPO -All | Sort-Object DisplayName
         foreach ($g in $gpos) { [void]$allGposCache.Add($g) }
@@ -2098,14 +2259,14 @@ function Show-Tool15 {
         if ($comboGpo1.Items.Count -gt 0) { $comboGpo1.SelectedIndex = 0 }
         if ($comboGpo2.Items.Count -gt 1) { $comboGpo2.SelectedIndex = 1 }
 
-        # Register 1 laden (baut $gpoLinksCache exakt auf)
+        # Register 1 laden
         Invoke-LoadOverview
 
-        # Register 2 initialisieren (synchronisiert auf die 13 ungelinkten GPOs)
+        # Register 2 initialisieren
         Update-SettingsGpoDropdown
         Invoke-LoadSettings
 
-        # Register 3 initialisieren (synchronisiert auf dieselben 13 ungelinkten GPOs)
+        # Register 3 initialisieren
         Invoke-LoadGpos
     })
 
