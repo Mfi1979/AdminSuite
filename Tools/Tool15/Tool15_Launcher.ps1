@@ -85,6 +85,7 @@ $script:dashDetailCache = @{}
 . (Join-Path $modulePath "Tab2_Settings.ps1")
 . (Join-Path $modulePath "Tab3_Backup.ps1")
 . (Join-Path $modulePath "Tab4_Compare.ps1")
+. (Join-Path $modulePath "Tab5_WmiFilter.ps1")
 
 # Tabs assemblieren
 Build-Tab0_Dashboard -tabControl $tabControl
@@ -92,6 +93,7 @@ Build-Tab1_Overview -tabControl $tabControl -domainDN $domainDN -domainName $dom
 Build-Tab2_Settings -tabControl $tabControl
 Build-Tab3_Backup -tabControl $tabControl
 Build-Tab4_Compare -tabControl $tabControl
+Build-Tab5_WmiFilter -tabControl $tabControl -domainDN $domainDN -domainName $domainName
 
 # Initialer Startablauf
 $form.Add_Shown({
@@ -117,6 +119,7 @@ $form.Add_Shown({
     & $script:Update_SettingsGpoDropdown
     & $script:Invoke_LoadSettings
     & $script:Invoke_LoadGpos
+    if ($script:Invoke_LoadWmiFilters) { & $script:Invoke_LoadWmiFilters }
 })
 
 $form.Add_FormClosing({ $script:isClosing = $true })
