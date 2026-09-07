@@ -1,4 +1,5 @@
-﻿# ==============================================================================
+#
+# ==============================================================================
 # ACTIVE DIRECTORY UND ENTRA ID ADMIN SUITE - HYBRID BOOTSTRAPPER
 # Startet die Suite lokal aus dem Ordner ODER live per One-Liner aus GitHub:
 # irm https://raw.githubusercontent.com/Mfi1979/AdminSuite/main/Start-AdminSuite.ps1 | iex
