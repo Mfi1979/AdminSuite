@@ -80,10 +80,10 @@ if ($IsLocal) {
     $webClient.Headers.Add("User-Agent", "PowerShell-AdminSuite-Loader")
     $webClient.Encoding = [System.Text.Encoding]::UTF8
 
-    # Cache-Buster, damit stets der aktuelle Stand von GitHub geladen wird
+    # Cache-Buster fuer Untermodule
     $cacheBuster = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 
-    # 1. PowerShell-Module aus dem Web laden und im globalen Scope ausfuehren
+    # 1. PowerShell-Module aus dem Web laden und global einbinden
     foreach ($file in $ModuleFiles) {
         $fileUrl = "$BaseRawUrl/$file`?t=$cacheBuster"
         try {
