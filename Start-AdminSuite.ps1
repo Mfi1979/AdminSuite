@@ -1,12 +1,10 @@
-﻿<#
-================================================================================
- ACTIVE DIRECTORY & ENTRA ID ADMIN SUITE - HYBRID BOOTSTRAPPER
- Startet die Suite lokal aus dem Ordner ODER live per One-Liner aus GitHub:
- irm https://raw.githubusercontent.com/Mfi1979/AdminSuite/main/Start-AdminSuite.ps1 | iex
-================================================================================
-#>
+﻿# ==============================================================================
+# ACTIVE DIRECTORY UND ENTRA ID ADMIN SUITE - HYBRID BOOTSTRAPPER
+# Startet die Suite lokal aus dem Ordner ODER live per One-Liner aus GitHub:
+# irm https://raw.githubusercontent.com/Mfi1979/AdminSuite/main/Start-AdminSuite.ps1 | iex
+# ==============================================================================
 
-# GitHub Basis-URL für den Web-Abruf
+# GitHub Basis-URL fuer den Web-Abruf
 $RepoOwner  = "Mfi1979"
 $RepoName   = "AdminSuite"
 $RepoBranch = "main"
@@ -18,13 +16,13 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.DirectoryServices
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# Sprachdateien (JSON) - hier bei Bedarf weitere Sprachen ergänzen
+# Sprachdateien (JSON)
 $LanguageFiles = @(
     "Languages/de-DE.json",
     "Languages/en-US.json"
 )
 
-# Moduldateien in exakter Abhängigkeitsreihenfolge
+# Moduldateien in exakter Abhaengigkeitsreihenfolge
 $ModuleFiles = @(
     "Config/UITheme.ps1",
     "Config/I18N.ps1",
@@ -45,7 +43,7 @@ $ModuleFiles = @(
     "GUI/MainWindow.ps1"
 )
 
-# Prüfen, ob lokal ausgeführt oder über das Web gestreamt
+# Pruefen, ob lokal ausgefuehrt oder ueber das Web gestreamt
 $IsLocal = ($PSScriptRoot -and (Test-Path "$PSScriptRoot\Config\I18N.ps1"))
 
 if ($IsLocal) {
@@ -71,7 +69,7 @@ if ($IsLocal) {
                     Register-LanguageJson -FileName (Split-Path $langFile -Leaf) -JsonContent $rawJson
                 }
             } catch {
-                Write-Warning "Fehler beim Einlesen von $localLangPath: $($_.Exception.Message)"
+                Write-Warning "Fehler beim Einlesen von ${localLangPath}: $($_.Exception.Message)"
             }
         }
     }
@@ -82,10 +80,10 @@ if ($IsLocal) {
     $webClient.Headers.Add("User-Agent", "PowerShell-AdminSuite-Loader")
     $webClient.Encoding = [System.Text.Encoding]::UTF8
 
-    # Cache-Buster, damit GitHub CDN stets den neuesten Stand liefert
+    # Cache-Buster, damit stets der aktuelle Stand von GitHub geladen wird
     $cacheBuster = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 
-    # 1. PowerShell-Module aus dem Web laden und im globalen Scope ausführen
+    # 1. PowerShell-Module aus dem Web laden und im globalen Scope ausfuehren
     foreach ($file in $ModuleFiles) {
         $fileUrl = "$BaseRawUrl/$file`?t=$cacheBuster"
         try {
@@ -105,7 +103,7 @@ if ($IsLocal) {
                 Register-LanguageJson -FileName ($langFile.Split('/')[-1]) -JsonContent $jsonContent
             }
         } catch {
-            Write-Warning "Fehler beim Laden der Sprachdatei $langUrl : $($_.Exception.Message)"
+            Write-Warning "Fehler beim Laden der Sprachdatei ${langUrl}: $($_.Exception.Message)"
         }
     }
 }
