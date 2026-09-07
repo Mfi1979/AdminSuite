@@ -1,4 +1,4 @@
-<#
+﻿<#
 ================================================================================
  ACTIVE DIRECTORY & ENTRA ID ADMIN SUITE - HYBRID BOOTSTRAPPER
  Startet die Suite lokal aus dem Ordner ODER live per One-Liner aus GitHub:
@@ -18,6 +18,12 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.DirectoryServices
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+# Sprachdateien (JSON) - hier bei Bedarf weitere Sprachen ergänzen
+$LanguageFiles = @(
+    "Languages/de-DE.json",
+    "Languages/en-US.json"
+)
+
 # Moduldateien in exakter Abhängigkeitsreihenfolge
 $ModuleFiles = @(
     "Config/UITheme.ps1",
@@ -35,7 +41,7 @@ $ModuleFiles = @(
     "Tools/Tool09_ACLCompare.ps1",
     "Tools/Tool10_OUGroupFinder.ps1",
     "Tools/Tool11_PasswordPolicy.ps1",
-	"Tools/Tool12_UserPasswordAge.ps1",
+    "Tools/Tool12_UserPasswordAge.ps1",
     "GUI/MainWindow.ps1"
 )
 
@@ -44,12 +50,29 @@ $IsLocal = ($PSScriptRoot -and (Test-Path "$PSScriptRoot\Config\I18N.ps1"))
 
 if ($IsLocal) {
     Write-Host "Lade Admin Suite lokal aus: $PSScriptRoot" -ForegroundColor Cyan
+
+    # 1. PowerShell-Module laden
     foreach ($file in $ModuleFiles) {
         $localPath = Join-Path $PSScriptRoot ($file -replace '/', '\')
         if (Test-Path $localPath) {
             . $localPath
         } else {
             Write-Warning "Datei nicht gefunden: $localPath"
+        }
+    }
+
+    # 2. Lokale Sprachdateien einlesen
+    foreach ($langFile in $LanguageFiles) {
+        $localLangPath = Join-Path $PSScriptRoot ($langFile -replace '/', '\')
+        if (Test-Path $localLangPath) {
+            try {
+                $rawJson = Get-Content -Path $localLangPath -Raw -Encoding UTF8
+                if (Get-Command Register-LanguageJson -ErrorAction SilentlyContinue) {
+                    Register-LanguageJson -FileName (Split-Path $langFile -Leaf) -JsonContent $rawJson
+                }
+            } catch {
+                Write-Warning "Fehler beim Einlesen von $localLangPath: $($_.Exception.Message)"
+            }
         }
     }
 } else {
@@ -59,13 +82,30 @@ if ($IsLocal) {
     $webClient.Headers.Add("User-Agent", "PowerShell-AdminSuite-Loader")
     $webClient.Encoding = [System.Text.Encoding]::UTF8
 
+    # Cache-Buster, damit GitHub CDN stets den neuesten Stand liefert
+    $cacheBuster = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+
+    # 1. PowerShell-Module aus dem Web laden und im globalen Scope ausführen
     foreach ($file in $ModuleFiles) {
-        $fileUrl = "$BaseRawUrl/$file"
+        $fileUrl = "$BaseRawUrl/$file`?t=$cacheBuster"
         try {
             $code = $webClient.DownloadString($fileUrl)
-            Invoke-Expression $code
+            . ([ScriptBlock]::Create($code))
         } catch {
             Write-Error "Fehler beim Laden von $fileUrl : $($_.Exception.Message)"
+        }
+    }
+
+    # 2. Sprachdateien (JSON) aus dem Web laden und registrieren
+    foreach ($langFile in $LanguageFiles) {
+        $langUrl = "$BaseRawUrl/$langFile`?t=$cacheBuster"
+        try {
+            $jsonContent = $webClient.DownloadString($langUrl)
+            if (Get-Command Register-LanguageJson -ErrorAction SilentlyContinue) {
+                Register-LanguageJson -FileName ($langFile.Split('/')[-1]) -JsonContent $jsonContent
+            }
+        } catch {
+            Write-Warning "Fehler beim Laden der Sprachdatei $langUrl : $($_.Exception.Message)"
         }
     }
 }

@@ -1,71 +1,54 @@
 ﻿<#
 ================================================================================
- CONFIG: I18N DYNAMISCHER JSON-LOADER & GET-TEXT FUNKTION
+ CONFIG: I18N SPRACHVERWALTUNG (REIN DATEIBASIERT)
 ================================================================================
 #>
 
-$script:CurrentLang = "DE"
-$script:I18N = @{}
+$global:CurrentLang = "DE"
+$global:I18N = @{}
 
-# Sprach-Mapping von Kurzcode auf Dateinamen
-$script:LangFileMap = @{
-    "DE" = "de-DE.json"
-    "EN" = "en-US.json"
-}
+# Funktion: Registriert eine geladene JSON-Sprachdatei (egal ob lokal oder aus dem Web)
+function Register-LanguageJson {
+    param(
+        [string]$FileName,
+        [string]$JsonContent
+    )
+    try {
+        $jsonObj = $JsonContent | ConvertFrom-Json
+        # Ermittelt z. B. aus "de-DE.json" das Kürzel "DE"
+        $langCode = ($FileName.Split('.')[0].Split('-')[0]).ToUpper()
 
-# Basisverzeichnis des Projekts ermitteln
-$scriptRoot = Split-Path -Parent $PSScriptRoot
-$langFolder = Join-Path $scriptRoot "Languages"
-if (-not (Test-Path $langFolder)) {
-    # Fallback falls direkt im Root ausgeführt
-    $langFolder = Join-Path $PSScriptRoot "Languages"
-}
-
-# Alle verfügbaren Sprachdateien einlesen
-function Initialize-Languages {
-    if (Test-Path $langFolder) {
-        Get-ChildItem -Path $langFolder -Filter "*.json" | ForEach-Object {
-            try {
-                $content = Get-Content -Path $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
-                
-                # Datei z.B. "de-DE.json" -> Key "DE", "en-US.json" -> Key "EN"
-                $shortKey = $_.BaseName.Split('-')[0].ToUpper()
-                
-                # In Hashtable konvertieren
-                $hash = @{}
-                $content.PSObject.Properties | ForEach-Object {
-                    $hash[$_.Name] = $_.Value
-                }
-                
-                $script:I18N[$shortKey] = $hash
-            } catch {
-                Write-Warning "Fehler beim Laden der Sprachdatei: $($_.FullName)"
-            }
+        if (-not $global:I18N.ContainsKey($langCode)) {
+            $global:I18N[$langCode] = @{}
         }
+
+        # Eigenschaften als Key-Value in die Hashtable eintragen
+        $jsonObj.PSObject.Properties | ForEach-Object {
+            $global:I18N[$langCode][$_.Name] = $_.Value
+        }
+    } catch {
+        Write-Warning "Fehler beim Verarbeiten der Sprachdatei: $FileName"
     }
 }
 
-# Text-Abruf mit Fallback
+# Funktion: Text holen mit Fallback
 function Get-Text {
     param([string]$Key)
-    
-    if ($script:I18N.ContainsKey($script:CurrentLang) -and $script:I18N[$script:CurrentLang].ContainsKey($Key)) {
-        return $script:I18N[$script:CurrentLang][$Key]
+
+    # 1. Gewünschte Sprache prüfen
+    if ($global:I18N.ContainsKey($global:CurrentLang)) {
+        if ($global:I18N[$global:CurrentLang].ContainsKey($Key)) {
+            return $global:I18N[$global:CurrentLang][$Key]
+        }
     }
-    # Fallback auf DE falls in Zielsprache nicht gepflegt
-    if ($script:I18N.ContainsKey("DE") -and $script:I18N["DE"].ContainsKey($Key)) {
-        return $script:I18N["DE"][$Key]
+
+    # 2. Fallback auf Deutsch (DE)
+    if ($global:I18N.ContainsKey("DE")) {
+        if ($global:I18N["DE"].ContainsKey($Key)) {
+            return $global:I18N["DE"][$Key]
+        }
     }
+
+    # 3. Wenn nirgends gefunden: Schlüsselnamen selbst zurückgeben
     return $Key
 }
-
-# Sprache wechseln
-function Set-Language {
-    param([string]$LangCode)
-    if ($script:I18N.ContainsKey($LangCode.ToUpper())) {
-        $script:CurrentLang = $LangCode.ToUpper()
-    }
-}
-
-# Beim Laden direkt initialisieren
-Initialize-Languages
