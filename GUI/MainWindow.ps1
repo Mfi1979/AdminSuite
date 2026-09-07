@@ -6,7 +6,7 @@
 function Start-AdminSuiteMainWindow {
     $mainForm = New-Object System.Windows.Forms.Form
     $mainForm.Text = Get-Text "Title"
-    $mainForm.Size = New-Object System.Drawing.Size(980, 1020)
+    $mainForm.Size = New-Object System.Drawing.Size(980, 1030)
     $mainForm.StartPosition = "CenterScreen"
     $mainForm.FormBorderStyle = "FixedDialog"
     $mainForm.MaximizeBox = $false
@@ -16,21 +16,36 @@ function Start-AdminSuiteMainWindow {
     # --- HEADER PANEL (3 Spalten) ---
     $pnlHeader = New-Object System.Windows.Forms.Panel
     $pnlHeader.Dock = [System.Windows.Forms.DockStyle]::Top
-    $pnlHeader.Height = 220
+    $pnlHeader.Height = 230
     $pnlHeader.BackColor = [System.Drawing.Color]::FromArgb(235, 242, 250)
     $mainForm.Controls.Add($pnlHeader)
 
+    $toolTip = New-Object System.Windows.Forms.ToolTip
+    $toolTip.InitialDelay = 250
+    $toolTip.ReshowDelay  = 100
+
+    # CSV Export Button
+    $btnExportCsv = New-Object System.Windows.Forms.Button
+    $btnExportCsv.Location = New-Object System.Drawing.Point(720, 9)
+    $btnExportCsv.Size = New-Object System.Drawing.Size(125, 26)
+    $btnExportCsv.Text = "📥 CSV Export"
+    $btnExportCsv.BackColor = [System.Drawing.Color]::FromArgb(16, 124, 65)
+    $btnExportCsv.ForeColor = [System.Drawing.Color]::White
+    $btnExportCsv.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnExportCsv.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8.5, [System.Drawing.FontStyle]::Bold)
+    $pnlHeader.Controls.Add($btnExportCsv)
+
     # Sprachumschalter (DE / EN)
     $btnLangEN = New-Object System.Windows.Forms.Button
-    $btnLangEN.Location = New-Object System.Drawing.Point(860, 10)
-    $btnLangEN.Size = New-Object System.Drawing.Size(45, 26)
+    $btnLangEN.Location = New-Object System.Drawing.Point(860, 9)
+    $btnLangEN.Size = New-Object System.Drawing.Size(42, 26)
     $btnLangEN.Text = "EN"
     $btnLangEN.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
     $pnlHeader.Controls.Add($btnLangEN)
 
     $btnLangDE = New-Object System.Windows.Forms.Button
-    $btnLangDE.Location = New-Object System.Drawing.Point(910, 10)
-    $btnLangDE.Size = New-Object System.Drawing.Size(45, 26)
+    $btnLangDE.Location = New-Object System.Drawing.Point(906, 9)
+    $btnLangDE.Size = New-Object System.Drawing.Size(42, 26)
     $btnLangDE.Text = "DE"
     $btnLangDE.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
     $pnlHeader.Controls.Add($btnLangDE)
@@ -38,10 +53,10 @@ function Start-AdminSuiteMainWindow {
     # Hauptüberschrift im Header
     $lblHeaderMain = New-Object System.Windows.Forms.Label
     $lblHeaderMain.Location = New-Object System.Drawing.Point(18, 10)
-    $lblHeaderMain.Size = New-Object System.Drawing.Size(830, 24)
+    $lblHeaderMain.Size = New-Object System.Drawing.Size(690, 24)
     $lblHeaderMain.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 11.5, [System.Drawing.FontStyle]::Bold)
     $lblHeaderMain.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
-    $lblHeaderMain.Text = "💻 $localComputerName | $localUserName"
+    $lblHeaderMain.Text = "💻 $global:localComputerName | $global:localUserName"
     $pnlHeader.Controls.Add($lblHeaderMain)
 
     # Trennlinie
@@ -52,59 +67,157 @@ function Start-AdminSuiteMainWindow {
     $pnlHeader.Controls.Add($lblHeaderLine)
 
     # -------------------------------------------------------------
-    # SPALTE 1: Betriebssystem & Domäne (Links, X = 18, Breite = 300)
+    # SPALTE 1: Betriebssystem & Domäne (Links)
     # -------------------------------------------------------------
     $lblCol1Title = New-Object System.Windows.Forms.Label
-    $lblCol1Title.Location = New-Object System.Drawing.Point(18, 46)
+    $lblCol1Title.Location = New-Object System.Drawing.Point(18, 44)
     $lblCol1Title.Size = New-Object System.Drawing.Size(300, 18)
     $lblCol1Title.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
     $lblCol1Title.ForeColor = [System.Drawing.Color]::FromArgb(71, 85, 105)
     $pnlHeader.Controls.Add($lblCol1Title)
 
     $lblCol1Content = New-Object System.Windows.Forms.Label
-    $lblCol1Content.Location = New-Object System.Drawing.Point(18, 66)
-    $lblCol1Content.Size = New-Object System.Drawing.Size(300, 142)
+    $lblCol1Content.Location = New-Object System.Drawing.Point(18, 64)
+    $lblCol1Content.Size = New-Object System.Drawing.Size(300, 155)
     $lblCol1Content.Font = New-Object System.Drawing.Font("Consolas", 8.5)
     $lblCol1Content.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
     $pnlHeader.Controls.Add($lblCol1Content)
 
     # -------------------------------------------------------------
-    # SPALTE 2: System & Hardware (Mitte, X = 330, Breite = 295)
+    # SPALTE 2: System & Hardware (Mitte - mit Klick-Kopierfunktion)
     # -------------------------------------------------------------
     $lblCol2Title = New-Object System.Windows.Forms.Label
-    $lblCol2Title.Location = New-Object System.Drawing.Point(330, 46)
-    $lblCol2Title.Size = New-Object System.Drawing.Size(295, 18)
+    $lblCol2Title.Location = New-Object System.Drawing.Point(325, 44)
+    $lblCol2Title.Size = New-Object System.Drawing.Size(300, 18)
     $lblCol2Title.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
     $lblCol2Title.ForeColor = [System.Drawing.Color]::FromArgb(71, 85, 105)
     $pnlHeader.Controls.Add($lblCol2Title)
 
-    $lblCol2Content = New-Object System.Windows.Forms.Label
-    $lblCol2Content.Location = New-Object System.Drawing.Point(330, 66)
-    $lblCol2Content.Size = New-Object System.Drawing.Size(295, 142)
-    $lblCol2Content.Font = New-Object System.Drawing.Font("Consolas", 8.5)
-    $lblCol2Content.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
-    $pnlHeader.Controls.Add($lblCol2Content)
+    # Computername (klickbar)
+    $lblCompNameClick = New-Object System.Windows.Forms.Label
+    $lblCompNameClick.Location = New-Object System.Drawing.Point(325, 64)
+    $lblCompNameClick.Size = New-Object System.Drawing.Size(300, 18)
+    $lblCompNameClick.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $lblCompNameClick.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $toolTip.SetToolTip($lblCompNameClick, "Klicken zum Kopieren des Computernamens ($global:localComputerName)")
+    $lblCompNameClick.Add_Click({
+        [System.Windows.Forms.Clipboard]::SetText($global:localComputerName)
+        $toolTip.Show("✓ Computername '$global:localComputerName' kopiert!", $lblCompNameClick, 0, -22, 1200)
+    })
+    $pnlHeader.Controls.Add($lblCompNameClick)
+
+    $lblHardwareMiddle = New-Object System.Windows.Forms.Label
+    $lblHardwareMiddle.Location = New-Object System.Drawing.Point(325, 82)
+    $lblHardwareMiddle.Size = New-Object System.Drawing.Size(300, 36)
+    $lblHardwareMiddle.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $pnlHeader.Controls.Add($lblHardwareMiddle)
+
+    # Seriennummer (klickbar)
+    $lblSerialClick = New-Object System.Windows.Forms.Label
+    $lblSerialClick.Location = New-Object System.Drawing.Point(325, 118)
+    $lblSerialClick.Size = New-Object System.Drawing.Size(300, 18)
+    $lblSerialClick.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $lblSerialClick.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $toolTip.SetToolTip($lblSerialClick, "Klicken zum Kopieren der Seriennummer ($global:localSerial)")
+    $lblSerialClick.Add_Click({
+        [System.Windows.Forms.Clipboard]::SetText($global:localSerial)
+        $toolTip.Show("✓ Seriennummer '$global:localSerial' kopiert!", $lblSerialClick, 0, -22, 1200)
+    })
+    $pnlHeader.Controls.Add($lblSerialClick)
+
+    $lblHardwareBottom = New-Object System.Windows.Forms.Label
+    $lblHardwareBottom.Location = New-Object System.Drawing.Point(325, 136)
+    $lblHardwareBottom.Size = New-Object System.Drawing.Size(300, 20)
+    $lblHardwareBottom.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $pnlHeader.Controls.Add($lblHardwareBottom)
 
     # -------------------------------------------------------------
-    # SPALTE 3: Entra ID / Cloud Status (Rechts, X = 640, Breite = 315)
+    # SPALTE 3: Entra ID / Cloud Status (Rechts - inkl. NgcSet & Status)
     # -------------------------------------------------------------
     $lblCol3Title = New-Object System.Windows.Forms.Label
-    $lblCol3Title.Location = New-Object System.Drawing.Point(640, 46)
-    $lblCol3Title.Size = New-Object System.Drawing.Size(315, 18)
+    $lblCol3Title.Location = New-Object System.Drawing.Point(635, 44)
+    $lblCol3Title.Size = New-Object System.Drawing.Size(320, 18)
     $lblCol3Title.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
     $lblCol3Title.ForeColor = [System.Drawing.Color]::FromArgb(71, 85, 105)
     $pnlHeader.Controls.Add($lblCol3Title)
 
-    $lblCol3Content = New-Object System.Windows.Forms.Label
-    $lblCol3Content.Location = New-Object System.Drawing.Point(640, 66)
-    $lblCol3Content.Size = New-Object System.Drawing.Size(315, 142)
-    $lblCol3Content.Font = New-Object System.Drawing.Font("Consolas", 8.5)
-    $lblCol3Content.ForeColor = [System.Drawing.Color]::FromArgb(15, 23, 42)
-    $pnlHeader.Controls.Add($lblCol3Content)
+    $lblEntraTop = New-Object System.Windows.Forms.Label
+    $lblEntraTop.Location = New-Object System.Drawing.Point(635, 64)
+    $lblEntraTop.Size = New-Object System.Drawing.Size(320, 54)
+    $lblEntraTop.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $pnlHeader.Controls.Add($lblEntraTop)
+
+    # NgcSet (klickbar für Erklärung)
+    $lblNgcSetClick = New-Object System.Windows.Forms.Label
+    $lblNgcSetClick.Location = New-Object System.Drawing.Point(635, 118)
+    $lblNgcSetClick.Size = New-Object System.Drawing.Size(320, 18)
+    $lblNgcSetClick.Font = New-Object System.Drawing.Font("Consolas", 8.5, [System.Drawing.FontStyle]::Underline)
+    $lblNgcSetClick.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $toolTip.SetToolTip($lblNgcSetClick, "Klicken für eine Erklärung zu NgcSet (Windows Hello for Business)")
+    $lblNgcSetClick.Add_Click({
+        [System.Windows.Forms.MessageBox]::Show(
+@"
+NgcSet (Next Generation Credential):
+Aktueller Status: $global:localNgcSet
+
+Bedeutung:
+• YES: Für den angemeldeten Benutzer ist auf diesem Gerät ein Hardwareschlüssel für 'Windows Hello for Business' (WHfB) eingerichtet und an das TPM gekoppelt.
+• Erlaubt die passwortlose Authentifizierung (PIN / Biometrie) an Microsoft Entra ID und Hybrid-Ressourcen.
+• NO: Es ist kein WHfB-Container aktiv. Die Authentifizierung erfolgt klassisch über Kennwort / Kerberos.
+"@,
+            "Erklärung: NgcSet (Windows Hello for Business)",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        )
+    })
+    $pnlHeader.Controls.Add($lblNgcSetClick)
+
+    $lblEntraBottom = New-Object System.Windows.Forms.Label
+    $lblEntraBottom.Location = New-Object System.Drawing.Point(635, 136)
+    $lblEntraBottom.Size = New-Object System.Drawing.Size(320, 60)
+    $lblEntraBottom.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $pnlHeader.Controls.Add($lblEntraBottom)
+
+    # --- CSV-EXPORT EVENT ---
+    $btnExportCsv.Add_Click({
+        $sfd = New-Object System.Windows.Forms.SaveFileDialog
+        $sfd.Filter = "CSV-Datei (*.csv)|*.csv"
+        $sfd.FileName = "SystemInfo_${global:localComputerName}_$((Get-Date).ToString('yyyyMMdd_HHmm')).csv"
+
+        if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            try {
+                $exportObj = [PSCustomObject]@{
+                    "Computername"        = $global:localComputerName
+                    "Benutzer"            = $global:localUserName
+                    "OS Edition"          = $global:osCaption
+                    "OS Build"            = $global:osBuildNumber
+                    "OS Version"          = $global:osVersionDisplay
+                    "Domaene"             = $global:localDomainName
+                    "Logonserver"         = $global:localLogonServer
+                    "Hersteller"          = $global:localManufacturer
+                    "Modell"              = $global:localModel
+                    "Seriennummer"        = $global:localSerial
+                    "Systemtyp"           = $global:localSystemType
+                    "Entra Join-Status"   = $global:localJoinStatus
+                    "Azure Device Status" = $global:localAzureDevStat
+                    "AzureAD PRT"         = $global:localAzureAdPrt
+                    "NgcSet (WHfB)"       = $global:localNgcSet
+                    "Tenant Name"         = $global:localTenantName
+                    "Tenant ID"           = $global:localTenantId
+                    "Device ID"           = $global:localDeviceId
+                    "Export-Datum"        = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+                }
+                $exportObj | Export-Csv -Path $sfd.FileName -NoTypeInformation -Encoding UTF8 -Delimiter ";"
+                [System.Windows.Forms.MessageBox]::Show("Header-Informationen erfolgreich exportiert nach:`r`n$($sfd.FileName)", "Export erfolgreich", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show("Fehler beim CSV-Export:`r`n$($_.Exception.Message)", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+            }
+        }
+    })
 
     # --- CLIENT TOOLS GROUPBOX ---
     $grpClient = New-Object System.Windows.Forms.GroupBox
-    $grpClient.Location = New-Object System.Drawing.Point(18, 230)
+    $grpClient.Location = New-Object System.Drawing.Point(18, 238)
     $grpClient.Size = New-Object System.Drawing.Size(935, 250)
     $grpClient.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 9, [System.Drawing.FontStyle]::Bold)
     $mainForm.Controls.Add($grpClient)
@@ -123,7 +236,7 @@ function Start-AdminSuiteMainWindow {
 
     # --- AD TOOLS GROUPBOX ---
     $grpAD = New-Object System.Windows.Forms.GroupBox
-    $grpAD.Location = New-Object System.Drawing.Point(18, 490)
+    $grpAD.Location = New-Object System.Drawing.Point(18, 498)
     $grpAD.Size = New-Object System.Drawing.Size(935, 465)
     $grpAD.Font = New-Object System.Drawing.Font($mainForm.Font.FontFamily, 9, [System.Drawing.FontStyle]::Bold)
     $mainForm.Controls.Add($grpAD)
@@ -159,34 +272,40 @@ function Start-AdminSuiteMainWindow {
         $grpAD.Text     = Get-Text "CategoryAD"
 
         $lblCol1Title.Text = Get-Text "LblHdrOS"
-        $lblCol2Title.Text = Get-Text "LblHdrSystem"
+        $lblCol2Title.Text = if ($script:CurrentLang -eq "DE") { "SYSTEM & HARDWARE (Klick = Kopieren)" } else { "SYSTEM & HARDWARE (Click = Copy)" }
         $lblCol3Title.Text = Get-Text "LblHdrEntra"
 
         # Spalte 1: OS & Domäne
         $lblCol1Content.Text = @"
-$("{0,-12}: {1}" -f (Get-Text "LblOS"), $osCaption)
-$("{0,-12}: {1}" -f (Get-Text "LblBuild"), $osBuildNumber)
-$("{0,-12}: {1}" -f (Get-Text "LblVersion"), $osVersionDisplay)
-$("{0,-12}: {1}" -f (Get-Text "LblDomain"), $localDomainName)
-$("{0,-12}: {1}" -f (Get-Text "LblLogonServer"), $localLogonServer)
+$("{0,-12}: {1}" -f (Get-Text "LblOS"), $global:osCaption)
+$("{0,-12}: {1}" -f (Get-Text "LblBuild"), $global:osBuildNumber)
+$("{0,-12}: {1}" -f (Get-Text "LblVersion"), $global:osVersionDisplay)
+$("{0,-12}: {1}" -f (Get-Text "LblDomain"), $global:localDomainName)
+$("{0,-12}: {1}" -f (Get-Text "LblLogonServer"), $global:localLogonServer)
 "@
 
         # Spalte 2: System & Hardware
-        $lblCol2Content.Text = @"
-$("{0,-13}: {1}" -f (Get-Text "LblCompName"), $localComputerName)
-$("{0,-13}: {1}" -f (Get-Text "LblManuf"), $localManufacturer)
-$("{0,-13}: {1}" -f (Get-Text "LblModel"), $localModel)
-$("{0,-13}: {1}" -f (Get-Text "LblSerial"), $localSerial)
-$("{0,-13}: {1}" -f (Get-Text "LblSysType"), $localSystemType)
+        $lblCompNameClick.Text = "{0,-13}: {1}" -f (Get-Text "LblCompName"), $global:localComputerName
+        $lblHardwareMiddle.Text = @"
+$("{0,-13}: {1}" -f (Get-Text "LblManuf"), $global:localManufacturer)
+$("{0,-13}: {1}" -f (Get-Text "LblModel"), $global:localModel)
 "@
+        $lblSerialClick.Text    = "{0,-13}: {1}" -f (Get-Text "LblSerial"), $global:localSerial
+        $lblHardwareBottom.Text = "{0,-13}: {1}" -f (Get-Text "LblSysType"), $global:localSystemType
 
         # Spalte 3: Entra ID / Cloud Status
-        $lblCol3Content.Text = @"
-$("{0,-12}: {1}" -f (Get-Text "LblJoinStatus"), $localJoinStatus)
-$("{0,-12}: {1}" -f (Get-Text "LblPrtStatus"), $localAzureAdPrt)
-$("{0,-12}: {1}" -f (Get-Text "LblTenantName"), $localTenantName)
-$("{0,-12}: {1}" -f (Get-Text "LblTenantId"), $(if ($localTenantId.Length -gt 16) { $localTenantId.Substring(0,13) + "..." } else { $localTenantId }))
-$("{0,-12}: {1}" -f (Get-Text "LblDeviceId"), $(if ($localDeviceId.Length -gt 16) { $localDeviceId.Substring(0,13) + "..." } else { $localDeviceId }))
+        $lblEntraTop.Text = @"
+$("{0,-12}: {1}" -f (Get-Text "LblJoinStatus"), $global:localJoinStatus)
+$("{0,-12}: {1}" -f "DeviceStatus", $global:localAzureDevStat)
+$("{0,-12}: {1}" -f (Get-Text "LblPrtStatus"), $global:localAzureAdPrt)
+"@
+        $lblNgcSetClick.Text = "{0,-12}: {1} 🛈 (Info)" -f "NgcSet", $global:localNgcSet
+        $lblNgcSetClick.ForeColor = if ($global:localNgcSet -eq "YES") { [System.Drawing.Color]::DarkGreen } else { [System.Drawing.Color]::FromArgb(15, 23, 42) }
+
+        $lblEntraBottom.Text = @"
+$("{0,-12}: {1}" -f (Get-Text "LblTenantName"), $global:localTenantName)
+$("{0,-12}: {1}" -f (Get-Text "LblTenantId"), $(if ($global:localTenantId.Length -gt 16) { $global:localTenantId.Substring(0,13) + "..." } else { $global:localTenantId }))
+$("{0,-12}: {1}" -f (Get-Text "LblDeviceId"), $(if ($global:localDeviceId.Length -gt 16) { $global:localDeviceId.Substring(0,13) + "..." } else { $global:localDeviceId }))
 "@
 
         $btnTool1.Text  = Get-Text "BtnTool1"

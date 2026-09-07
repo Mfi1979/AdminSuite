@@ -1,0 +1,44 @@
+﻿{
+  "Title": "Active Directory & Entra ID Admin Suite",
+  "CategoryClient": "Kategorie: Client & Lokale Diagnose (Client Tools)",
+  "CategoryAD": "Kategorie: Active Directory & Domänen Diagnose (AD Tools)",
+
+  "LblHdrOS": "BETRIEBSSYSTEM & DOMÄNE",
+  "LblHdrSystem": "SYSTEM & HARDWARE (Klick = Kopieren)",
+  "LblHdrEntra": "ENTRA ID / CLOUD STATUS",
+
+  "LblOS": "OS Edition",
+  "LblBuild": "Build",
+  "LblVersion": "Version",
+  "LblDomain": "Domäne",
+  "LblLogonServer": "Logonserver",
+
+  "LblCompName": "Computername",
+  "LblManuf": "Hersteller",
+  "LblModel": "Modell",
+  "LblSerial": "Seriennummer",
+  "LblSysType": "Systemtyp",
+
+  "LblJoinStatus": "Join-Status",
+  "LblDeviceStatus": "DeviceStatus",
+  "LblPrtStatus": "AzureAD PRT",
+  "LblNgcSet": "NgcSet",
+  "LblTenantName": "Tenant Name",
+  "LblTenantId": "Tenant ID",
+  "LblDeviceId": "Device ID",
+
+  "BtnExportCsv": "📥 CSV Export",
+
+  "BtnTool1": "Tool 1: Multi-DC LastLogon Übersicht\n(Automatischer DC- & Site-Scan mit Live-Abfrage)",
+  "BtnTool2": "Tool 2: Quick AD Audit\n(Inaktive Computerkonten, Passwort nie abgelaufen, Leere Gruppen)",
+  "BtnTool3": "Tool 3: Entra ID / Hybrid Join Diagnostic\n(Auslesen von dsregcmd /status & Tenant Details)",
+  "BtnTool4": "Tool 4: Gruppen & GPO Diagnostik\n(Register: User-Gruppen, PC-Gruppen & angewendete GPOs)",
+  "BtnTool5": "Tool 5: Windows 11 Readiness & OS Details\n(Hardware-Kompatibilität, TPM 2.0, SecureBoot & Update-Stand)",
+  "BtnTool6": "Tool 6: Domänen-Übersicht & Admin-Audit\n(FSMO-Rollen, AD-Papierkorb & Privilegierte Admins)",
+  "BtnTool7": "Tool 7: AD Security & Out-of-Support OS Audit\n(Identifikation veralteter & nicht mehr unterstützter Systeme)",
+  "BtnTool8": "Tool 8: Client Software & App Analyse\n(Win32- & Store-Apps mit Sprachauswertung und CSV-Export)",
+  "BtnTool9": "Tool 9: Universal AD ACL-Vergleich & Diff\n(Rechtevergleich zweier OUs, Gruppen oder Benutzer)",
+  "BtnTool10": "Tool 10: OU- & Gruppen-Finder (Wildcard-Suche)\n(Objekte, OU-Struktur & rekursive Gruppenmitgliedschaften)",
+  "BtnTool11": "Tool 11: AD Kennwortrichtlinien & PSO Audit\n(Default Domain Policy, Fine-Grained PSOs & Benutzer-Check)",
+  "BtnTool12": "Tool 12: AD Benutzer Kennwortalter & pwdLastSet\n(Passwort-Historie, Ablauf & Alter aller User)"
+}
