@@ -576,6 +576,7 @@ function Build-Tab0_Dashboard {
 
             if ($script:pbarGlobal) { $script:pbarGlobal.Visible = $false }
             $form.Cursor = [System.Windows.Forms.Cursors]::Default
+<<<<<<< HEAD
         }
     }
 
@@ -585,3 +586,14 @@ function Build-Tab0_Dashboard {
         }
     })
 }
+=======
+        }
+    }
+
+    $btnRefreshDashboard.Add_Click({
+        if ($script:Invoke_LoadDashboard -is [scriptblock]) {
+            & $script:Invoke_LoadDashboard
+        }
+    })
+}
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae

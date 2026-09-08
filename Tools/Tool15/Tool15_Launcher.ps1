@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 ﻿# =========================================================================
+=======
+# =========================================================================
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 # Tool15_Launcher.ps1 - Active Directory GPO Enterprise Suite
 # =========================================================================
 
@@ -27,7 +31,11 @@ if ($isWebExecution) {
 }
 
 # -------------------------------------------------------------------------
+<<<<<<< HEAD
 # 2. Module herunterladen (falls nötig) & im Skript-Scope dot-sourcen
+=======
+# 2. Module herunterladen (falls nötig) & direkt im Skript-Scope dot-sourcen
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 # -------------------------------------------------------------------------
 $moduleList = @(
     "common.ps1",
@@ -43,6 +51,10 @@ $moduleList = @(
 foreach ($mod in $moduleList) {
     $targetFile = Join-Path $modulePath $mod
 
+<<<<<<< HEAD
+=======
+    # Wenn Datei lokal fehlt oder via Web/iex gestartet wurde -> von GitHub holen
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
     if ($isWebExecution -or (-not (Test-Path $targetFile))) {
         $rawUrl = "$gitHubBaseUrl/Modules/$mod"
         try {
@@ -102,21 +114,32 @@ function Enable-GridSorting {
 
     $Grid.Add_ColumnHeaderMouseClick({
         param($sender, $e)
+<<<<<<< HEAD
         
         $colIndex = $e.ColumnIndex
         if ($colIndex -lt 0 -or $colIndex -ge $sender.Columns.Count) { return }
         
         $propName = $sender.Columns[$colIndex].DataPropertyName
+=======
+        $column = $sender.Columns[$e.ColumnIndex]
+        $propName = $column.DataPropertyName
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
         if ([string]::IsNullOrWhiteSpace($propName)) { return }
 
         $dataSource = $sender.DataSource
         if ($null -eq $dataSource) { return }
 
+<<<<<<< HEAD
         $currentGlyph = $sender.Columns[$colIndex].HeaderCell.SortGlyphDirection
         $direction = if ($currentGlyph -eq [System.Windows.Forms.SortOrder]::Ascending) {
             [System.ComponentModel.ListSortDirection]::Descending
         } else {
             [System.ComponentModel.ListSortDirection]::Ascending
+=======
+        $direction = [System.ComponentModel.ListSortDirection]::Ascending
+        if ($column.HeaderCell.SortGlyphDirection -eq [System.Windows.Forms.SortOrder]::Ascending) {
+            $direction = [System.ComponentModel.ListSortDirection]::Descending
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
         }
 
         $list = [System.Collections.ArrayList]::new()
@@ -129,6 +152,7 @@ function Enable-GridSorting {
         foreach ($item in $sorted) { [void]$list.Add($item) }
         $sender.DataSource = $list
 
+<<<<<<< HEAD
         foreach ($c in $sender.Columns) {
             $c.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
         }
@@ -140,6 +164,15 @@ function Enable-GridSorting {
             } else {
                 [System.Windows.Forms.SortOrder]::Descending
             }
+=======
+        foreach ($col in $sender.Columns) {
+            $col.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
+        }
+        $column.HeaderCell.SortGlyphDirection = if ($direction -eq [System.ComponentModel.ListSortDirection]::Ascending) {
+            [System.Windows.Forms.SortOrder]::Ascending
+        } else {
+            [System.Windows.Forms.SortOrder]::Descending
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
         }
     })
 }
@@ -148,14 +181,22 @@ function Enable-GridSorting {
 # 6. Hauptfenster initialisieren
 # -------------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
+<<<<<<< HEAD
 $form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - v1.9.8"
+=======
+$form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - v1.9.4"
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 $form.Size = New-Object System.Drawing.Size(1280, 800)
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.MinimumSize = New-Object System.Drawing.Size(1024, 650)
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
 $form.BackColor = [System.Drawing.Color]::FromArgb(246, 248, 252)
 
+<<<<<<< HEAD
 # Statuszeile & Fortschrittsbalken
+=======
+# Statuszeile
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
 $statusStrip.Height = 28
 $statusStrip.BackColor = [System.Drawing.Color]::FromArgb(238, 242, 248)
@@ -166,7 +207,11 @@ $script:lblProgressInfo.Spring = $true
 $script:lblProgressInfo.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 
 $script:pbarGlobal = New-Object System.Windows.Forms.ToolStripProgressBar
+<<<<<<< HEAD
 $script:pbarGlobal.Size = New-Object System.Drawing.Size(250, 18)
+=======
+$script:pbarGlobal.Size = New-Object System.Drawing.Size(200, 18)
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 $script:pbarGlobal.Visible = $false
 
 [void]$statusStrip.Items.Add($script:lblProgressInfo)
@@ -180,7 +225,11 @@ $tabControl.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing
 $form.Controls.Add($tabControl)
 
 # -------------------------------------------------------------------------
+<<<<<<< HEAD
 # 7. UI-Tabs aufbauen (NUR EINMAL)
+=======
+# 7. UI-Tabs aufbauen
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 # -------------------------------------------------------------------------
 Build-Tab0_Dashboard -tabControl $tabControl -domainDN $domainDN -domainName $domainName
 Build-Tab1_Overview  -tabControl $tabControl -domainDN $domainDN -domainName $domainName
@@ -190,6 +239,7 @@ Build-Tab4_Compare   -tabControl $tabControl
 Build-Tab5_WmiFilter -tabControl $tabControl -domainDN $domainDN -domainName $domainName
 
 # -------------------------------------------------------------------------
+<<<<<<< HEAD
 # 8. Vollautomatischer Start-Load nach dem Anzeigen des Fensters
 # -------------------------------------------------------------------------
 $form.Add_Shown({
@@ -303,6 +353,13 @@ $form.Add_Shown({
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
     }
 })
+=======
+# 8. Dashboard initial laden
+# -------------------------------------------------------------------------
+if ($script:Invoke_LoadDashboard -is [scriptblock]) {
+    & $script:Invoke_LoadDashboard
+}
+>>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 
 # -------------------------------------------------------------------------
 # 9. Schliess- & Bereinigungslogik
