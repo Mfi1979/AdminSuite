@@ -1,5 +1,5 @@
 # =========================================================================
-# GpoParser.ps1 - Dual-Engine Parser (HTML-GPMC-Paritaet + XML-Fallback)
+# GpoParser.ps1 - Mehrsprachiger Dual-Engine Parser (DE / EN Paritaet)
 # =========================================================================
 
 function Clean-GpoHtmlText ([string]$rawText) {
@@ -44,18 +44,20 @@ function Get-ParsedGpoSettings {
     }
 
     # =========================================================================
-    # ENGINE 1: Nativer GPMC-HTML-Bericht (100% Paritaet mit Microsoft-Berichten)
+    # ENGINE 1: Nativer GPMC-HTML-Bericht (Mehrsprachig DE & EN)
     # =========================================================================
     $htmlSuccess = $false
     try {
         $html = Get-GPOReport -Guid $GpoId -ReportType Html -ErrorAction Stop
         if (-not [string]::IsNullOrWhiteSpace($html)) {
 
-            $scopePattern = '(?s)<div class="he0_expanded"><span class="sectionTitle"[^>]*>(?<scopeName>(?:Computer|User) Configuration)[^<]*</span>(?<scopeBody>[\s\S]*?)(?=(?:<div class="he0_expanded"><span class="sectionTitle"[^>]*>(?:Computer|User|General)|</body>|$))'
+            # Regex erfasst sowohl englische ("Computer Configuration") als auch deutsche ("Computerkonfiguration") Scopes
+            $scopePattern = '(?si)<div class="he0_expanded"><span class="sectionTitle"[^>]*>(?<scopeName>(?:Computer|User|Benutzer)(?:\s*Configuration|konfiguration)?)[^<]*</span>(?<scopeBody>[\s\S]*?)(?=(?:<div class="he0_expanded"><span class="sectionTitle"[^>]*>(?:Computer|User|Benutzer|General|Allgemein)|</body>|$))'
             $scopeMatches = [regex]::Matches($html, $scopePattern)
 
             foreach ($sm in $scopeMatches) {
-                $scope = if ($sm.Groups["scopeName"].Value -match "Computer") { "Computer" } else { "User" }
+                $rawScope = $sm.Groups["scopeName"].Value
+                $scope = if ($rawScope -match "User|Benutzer") { "User" } else { "Computer" }
                 $scopeBody = $sm.Groups["scopeBody"].Value
 
                 $tokenPattern = '(?<header><div class="(?<hCls>he[1-5][a-z_]*)"><span class="sectionTitle"[^>]*>(?<hTitle>[^<]+)</span>)|(?<table><table(?<tAttr>[^>]*)class="(?<tCls>[^"]*)"[^>]*>(?<tBody>[\s\S]*?)</table>)'
@@ -65,6 +67,7 @@ function Get-ParsedGpoSettings {
                 $lastItemRef = $null
 
                 foreach ($token in $tokens) {
+                    # 1. Kategorie-Ueberschriften erfassen
                     if ($token.Groups["header"].Success) {
                         $hCls = $token.Groups["hCls"].Value
                         $hTitle = Clean-GpoHtmlText $token.Groups["hTitle"].Value
@@ -73,10 +76,12 @@ function Get-ParsedGpoSettings {
                         $catLevels[$level] = $hTitle
                         for ($i = $level + 1; $i -le 6; $i++) { $catLevels.Remove($i) }
                     }
+                    # 2. Tabellen mit Richtlinieneinstellungen
                     elseif ($token.Groups["table"].Success) {
                         $tCls = $token.Groups["tCls"].Value
                         $tBody = $token.Groups["tBody"].Value
 
+                        # Subtable (Parameter gehoeren zum vorherigen Eintrag)
                         if ($tCls -match "subtable_frame" -and $null -ne $lastItemRef) {
                             $subRows = [regex]::Matches($tBody, '<tr[^>]*>\s*<td[^>]*>(?<k>[\s\S]*?)</td>\s*<td[^>]*>(?<v>[\s\S]*?)</td>\s*</tr>')
                             $paramParts = @()
@@ -91,7 +96,8 @@ function Get-ParsedGpoSettings {
                             continue
                         }
 
-                        $catPath = ($catLevels.Keys | Sort-Object | ForEach-Object { $catLevels[$_] } | Where-Object { $_ -notin @("Policies", "General") }) -join " / "
+                        # Kategoriepfad zusammenstellen
+                        $catPath = ($catLevels.Keys | Sort-Object | ForEach-Object { $catLevels[$_] } | Where-Object { $_ -notin @("Policies", "Richtlinien", "General", "Allgemein") }) -join " / "
                         if ([string]::IsNullOrWhiteSpace($catPath)) { $catPath = "Richtlinien" }
 
                         $rows = [regex]::Matches($tBody, '<tr[^>]*>(?<rContent>[\s\S]*?)</tr>')
@@ -109,6 +115,7 @@ function Get-ParsedGpoSettings {
                                 $pSupported = "Windows Gruppenrichtlinie"
                                 $pExplain   = "Keine Erklaerung hinterlegt."
 
+                                # Administrative Vorlagen (Erklaerungstext aus gpmc-Attributen)
                                 if ($c0 -match 'gpmc_settingName="(?<sName>[^"]*)"') {
                                     $pName = [System.Net.WebUtility]::HtmlDecode($matches["sName"])
                                     if ($c0 -match 'gpmc_settingDescription="(?<sDesc>[^"]*)"') {
@@ -121,12 +128,13 @@ function Get-ParsedGpoSettings {
                                     $pName = Clean-GpoHtmlText $c0
                                 }
 
-                                if ($cells.Count -ge 4 -and $catPath -match "Encrypting File System|Certificates") {
+                                # EFS-Zertifikate (4 Spalten)
+                                if ($cells.Count -ge 4 -and $catPath -match "Encrypting File System|Dateisystem|Certificates|Zertifikate") {
                                     $issuedTo = Clean-GpoHtmlText $cells[0].Groups["cVal"].Value
                                     $expDate  = Clean-GpoHtmlText $cells[2].Groups["cVal"].Value
                                     $purpose  = Clean-GpoHtmlText $cells[3].Groups["cVal"].Value
                                     $pName = "Certificates (Encrypting File System)"
-                                    $pVal  = "Issued To: $issuedTo | Intended Purposes: $purpose | Expiration Date: $expDate"
+                                    $pVal  = "Ausgestellt fuer: $issuedTo | Zweck: $purpose | Ablaufdatum: $expDate"
                                 }
 
                                 if ([string]::IsNullOrWhiteSpace($pName) -or [string]::IsNullOrWhiteSpace($pVal)) { continue }
@@ -172,7 +180,7 @@ function Get-ParsedGpoSettings {
     }
 
     # =========================================================================
-    # ENGINE 2: XML-Fallback
+    # ENGINE 2: XML-Fallback (nur falls HTML komplett fehlschlaegt)
     # =========================================================================
     try {
         [xml]$xml = Get-GPOReport -Guid $GpoId -ReportType Xml -ErrorAction Stop
