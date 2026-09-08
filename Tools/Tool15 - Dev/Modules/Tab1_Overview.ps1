@@ -24,6 +24,7 @@ function Build-Tab1_Overview {
     $lblViewFilter.AutoSize = $true
     $lblViewFilter.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
+    # Im Script-Scope registriert, damit der spätere Refresh-Block Zugriff hat
     $script:comboViewMode = New-Object System.Windows.Forms.ComboBox
     $script:comboViewMode.Location = New-Object System.Drawing.Point(75, 13)
     $script:comboViewMode.Size = New-Object System.Drawing.Size(200, 25)
@@ -37,18 +38,17 @@ function Build-Tab1_Overview {
     $lblOverviewSearch.AutoSize = $true
     $lblOverviewSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
+    # Im Script-Scope registriert, damit .Trim() nie auf $null läuft
     $script:txtOverviewSearch = New-Object System.Windows.Forms.TextBox
     $script:txtOverviewSearch.Location = New-Object System.Drawing.Point(335, 13)
     $script:txtOverviewSearch.Size = New-Object System.Drawing.Size(130, 25)
 
-    # Global im Script-Scope registriert, damit der Launcher PerformClick() ausführen kann
-    $script:btnLoadAdGpos = New-Object System.Windows.Forms.Button
-    $script:btnLoadAdGpos.Name = "btnLoadAdGpos"
-    $script:btnLoadAdGpos.Text = "GPOs einlesen"
-    $script:btnLoadAdGpos.Location = New-Object System.Drawing.Point(475, 10)
-    $script:btnLoadAdGpos.Size = New-Object System.Drawing.Size(120, 30)
-    $script:btnLoadAdGpos.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
-    $script:btnLoadAdGpos.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $btnLoadAdGpos = New-Object System.Windows.Forms.Button
+    $btnLoadAdGpos.Text = "GPOs einlesen"
+    $btnLoadAdGpos.Location = New-Object System.Drawing.Point(475, 10)
+    $btnLoadAdGpos.Size = New-Object System.Drawing.Size(120, 30)
+    $btnLoadAdGpos.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
+    $btnLoadAdGpos.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
     $btnSaveSnapshot = New-Object System.Windows.Forms.Button
     $btnSaveSnapshot.Text = "Snapshot speichern"
@@ -76,7 +76,7 @@ function Build-Tab1_Overview {
 
     $panelOverviewTop.Controls.AddRange(@(
         $lblViewFilter, $script:comboViewMode, $lblOverviewSearch, $script:txtOverviewSearch, 
-        $script:btnLoadAdGpos, $btnSaveSnapshot, $btnLoadSnapshot, $btnExportOverviewCsv, $script:lblLegendOverview
+        $btnLoadAdGpos, $btnSaveSnapshot, $btnLoadSnapshot, $btnExportOverviewCsv, $script:lblLegendOverview
     ))
 
     $splitOverview = New-Object System.Windows.Forms.SplitContainer
@@ -141,9 +141,7 @@ function Build-Tab1_Overview {
     Enable-GridSorting -Grid $script:gridOvMaster
     Enable-GridSorting -Grid $script:gridOvDetails
 
-    # ---------------------------------------------------------------------
-    # Rendering-Routine
-    # ---------------------------------------------------------------------
+    # Rendering mit vollständiger Null-Absicherung
     $script:Update_OverviewDisplay = {
         if ($script:isClosing -or $null -eq $script:gridOvMaster -or $script:gridOvMaster.IsDisposed) { return }
 
@@ -188,9 +186,6 @@ function Build-Tab1_Overview {
         }
     }
 
-    # ---------------------------------------------------------------------
-    # Laderoutine
-    # ---------------------------------------------------------------------
     $script:Invoke_LoadOverview = {
         if ($script:isClosing -or $form.IsDisposed) { return }
 
@@ -218,14 +213,9 @@ function Build-Tab1_Overview {
                 $wmiSearcher.PropertiesToLoad.AddRange(@("msWMI-Name", "msWMI-ID", "msWMI-Parm2"))
                 $wmiResults = $wmiSearcher.FindAll()
                 foreach ($w in $wmiResults) {
-                    $wId = if ($w.Properties["mswmi-id"].Count -gt 0) { "$($w.Properties['mswmi-id'][0])" } else { "" }
-                    $wName = if ($w.Properties["mswmi-name"].Count -gt 0) { "$($w.Properties['mswmi-name'][0])" } else { "Unbenannt" }
-                    $wQuery = if ($w.Properties["mswmi-parm2"].Count -gt 0) { "$($w.Properties['mswmi-parm2'][0])" } else { "" }
-                    if ($wId) {
-                        $wmiMap[$wId] = [PSCustomObject]@{
-                            Name  = $wName
-                            Query = $wQuery
-                        }
+                    $wmiMap[$w.Properties["mswmi-id"][0]] = [PSCustomObject]@{
+                        Name  = $w.Properties["mswmi-name"][0]
+                        Query = if ($w.Properties["mswmi-parm2"]) { $w.Properties["mswmi-parm2"][0] } else { "" }
                     }
                 }
             } catch {}
@@ -239,9 +229,9 @@ function Build-Tab1_Overview {
             $ouResults = $linkSearcher.FindAll()
 
             foreach ($ou in $ouResults) {
-                if ($ou.Properties["gplink"] -and $ou.Properties["gplink"].Count -gt 0) {
-                    $targetDN = "$($ou.Properties['distinguishedname'][0])"
-                    $matches = [regex]::Matches("$($ou.Properties['gplink'][0])", "cn=({?[a-fA-F0-9-]+}?)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                if ($ou.Properties["gplink"]) {
+                    $targetDN = $ou.Properties["distinguishedname"][0]
+                    $matches = [regex]::Matches($ou.Properties["gplink"][0], "cn=({?[a-fA-F0-9-]+}?)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
                     foreach ($m in $matches) {
                         $cleanGuid = $m.Groups[1].Value.Trim('{','}').ToUpper()
                         if (-not $script:gpoLinksCache.ContainsKey($cleanGuid)) {
@@ -261,9 +251,9 @@ function Build-Tab1_Overview {
                 $siteSearcher.PropertiesToLoad.AddRange(@("distinguishedName", "gPLink"))
                 $siteResults = $siteSearcher.FindAll()
                 foreach ($site in $siteResults) {
-                    if ($site.Properties["gplink"] -and $site.Properties["gplink"].Count -gt 0) {
-                        $targetDN = "$($site.Properties['distinguishedname'][0])"
-                        $matches = [regex]::Matches("$($site.Properties['gplink'][0])", "cn=({?[a-fA-F0-9-]+}?)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                    if ($site.Properties["gplink"]) {
+                        $targetDN = $site.Properties["distinguishedname"][0]
+                        $matches = [regex]::Matches($site.Properties["gplink"][0], "cn=({?[a-fA-F0-9-]+}?)", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
                         foreach ($m in $matches) {
                             $cleanGuid = $m.Groups[1].Value.Trim('{','}').ToUpper()
                             if (-not $script:gpoLinksCache.ContainsKey($cleanGuid)) {
@@ -287,10 +277,10 @@ function Build-Tab1_Overview {
 
             foreach ($g in $gpoResults) {
                 $currentIndex++
-                $rawGuid = if ($g.Properties["name"].Count -gt 0) { "$($g.Properties['name'][0])" } else { "" }
+                $rawGuid = if ($g.Properties["name"]) { "$($g.Properties['name'][0])" } else { "" }
                 $cleanGuid = if ($rawGuid) { $rawGuid.Trim('{','}').ToUpper() } else { "" }
-                $displayName = if ($g.Properties["displayname"].Count -gt 0) { "$($g.Properties['displayname'][0])" } else { "{$cleanGuid}" }
-                $flags = if ($g.Properties["flags"].Count -gt 0) { [int]$g.Properties["flags"][0] } else { 0 }
+                $displayName = if ($g.Properties["displayname"]) { "$($g.Properties['displayname'][0])" } else { "{$cleanGuid}" }
+                $flags = if ($g.Properties["flags"]) { [int]$g.Properties["flags"][0] } else { 0 }
 
                 if ($script:pbarGlobal) { $script:pbarGlobal.Value = $currentIndex }
                 if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Lese GPO ($currentIndex / $($gpoResults.Count)): $displayName" }
@@ -319,7 +309,7 @@ function Build-Tab1_Overview {
 
                 $wmiFilterName = "-"
                 $wmiFilterQuery = "-"
-                if ($g.Properties["gpcwqlfilter"].Count -gt 0 -and "$($g.Properties['gpcwqlfilter'][0])" -match "({?[a-fA-F0-9-]+}?)") {
+                if ($g.Properties["gpcwqlfilter"] -and "$($g.Properties['gpcwqlfilter'][0])" -match "({?[a-fA-F0-9-]+}?)") {
                     $wGuid = $matches[1]
                     if ($wmiMap.ContainsKey($wGuid)) {
                         $wmiFilterName = $wmiMap[$wGuid].Name
@@ -337,8 +327,8 @@ function Build-Tab1_Overview {
                     "WMI-Filter"    = $wmiFilterName
                     "WMI Query"     = $wmiFilterQuery
                     "GUID"          = "{$cleanGuid}"
-                    "Erstellt am"   = if ($g.Properties["whencreated"].Count -gt 0) { (Get-Date $g.Properties["whencreated"][0]).ToString("dd.MM.yyyy HH:mm") } else { "-" }
-                    "Geaendert am"  = if ($g.Properties["whenchanged"].Count -gt 0) { (Get-Date $g.Properties["whenchanged"][0]).ToString("dd.MM.yyyy HH:mm") } else { "-" }
+                    "Erstellt am"   = if ($g.Properties["whencreated"]) { (Get-Date $g.Properties["whencreated"][0]).ToString("dd.MM.yyyy HH:mm") } else { "-" }
+                    "Geaendert am"  = if ($g.Properties["whenchanged"]) { (Get-Date $g.Properties["whenchanged"][0]).ToString("dd.MM.yyyy HH:mm") } else { "-" }
                 })
             }
 
@@ -347,6 +337,7 @@ function Build-Tab1_Overview {
         } catch {
             if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Fehler: $($_.Exception.Message)" }
         } finally {
+            # Offene LDAP-Verbindungen freigeben
             if ($wmiSearcher)  { $wmiSearcher.Dispose() }
             if ($wmiRoot)      { $wmiRoot.Dispose() }
             if ($linkSearcher) { $linkSearcher.Dispose() }
@@ -356,16 +347,11 @@ function Build-Tab1_Overview {
 
             if ($script:pbarGlobal) { $script:pbarGlobal.Visible = $false }
             $form.Cursor = [System.Windows.Forms.Cursors]::Default
+            
+            # Speicher freigeben
             [System.GC]::Collect()
-        }
-    }
+        }    }
 
-    # Beide Referenznamen sicherstellen
-    $script:Invoke_LoadGpos = $script:Invoke_LoadOverview
-
-    # ---------------------------------------------------------------------
-    # Grid Styling
-    # ---------------------------------------------------------------------
     $script:gridOvMaster.Add_DataBindingComplete({
         if ($script:isClosing -or $null -eq $script:gridOvMaster -or $script:gridOvMaster.IsDisposed) { return }
         foreach ($row in $script:gridOvMaster.Rows) {
@@ -388,10 +374,7 @@ function Build-Tab1_Overview {
         }
     })
 
-    # ---------------------------------------------------------------------
-    # Event Handlers
-    # ---------------------------------------------------------------------
-    $script:btnLoadAdGpos.Add_Click({
+    $btnLoadAdGpos.Add_Click({
         & $script:Invoke_LoadOverview
         if ($script:Invoke_UpdateDashboard) { & $script:Invoke_UpdateDashboard }
     })

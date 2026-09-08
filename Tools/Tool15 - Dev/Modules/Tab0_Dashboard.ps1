@@ -1,11 +1,11 @@
 # =========================================================================
-# Tab0_Dashboard.ps1 - Status & Dashboard Uebersicht (KPIs, Checks & WMI)
+# Tab0_Dashboard.ps1 - Status & Dashboard Uebersicht (KPIs & WMI-Status)
 # =========================================================================
 
 function Build-Tab0_Dashboard {
     param($tabControl, $domainDN, $domainName)
 
-    # Sichere Domänenermittlung
+    # 1. Sichere Dom�nenermittlung (falls Parameter leer sind)
     if ([string]::IsNullOrWhiteSpace($domainName) -or [string]::IsNullOrWhiteSpace($domainDN)) {
         try {
             $curDom = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
@@ -102,15 +102,15 @@ function Build-Tab0_Dashboard {
     $cardWmiTotal    = Create-DashboardCard "WMI-FILTER GESAMT" ([System.Drawing.Color]::FromArgb(24, 76, 120))
     $cardWmiUnused   = Create-DashboardCard "UNGENUTZTE WMI" ([System.Drawing.Color]::DarkGreen)
 
-    $script:lblKpiGpoTotal      = $cardGpoTotal.ValueLabel
-    $script:lblKpiGpoLinked     = $cardGpoLinked.ValueLabel
-    $script:lblKpiGpoUnlinked   = $cardGpoUnlinked.ValueLabel
+    $script:lblKpiGpoTotal    = $cardGpoTotal.ValueLabel
+    $script:lblKpiGpoLinked   = $cardGpoLinked.ValueLabel
+    $script:lblKpiGpoUnlinked = $cardGpoUnlinked.ValueLabel
     $script:panelKpiGpoUnlinked = $cardGpoUnlinked.Panel
-    $script:lblKpiGpoDisabled   = $cardGpoDisabled.ValueLabel
+    $script:lblKpiGpoDisabled = $cardGpoDisabled.ValueLabel
     $script:panelKpiGpoDisabled = $cardGpoDisabled.Panel
-    $script:lblKpiWmiTotal      = $cardWmiTotal.ValueLabel
-    $script:lblKpiWmiUnused     = $cardWmiUnused.ValueLabel
-    $script:panelKpiWmiUnused   = $cardWmiUnused.Panel
+    $script:lblKpiWmiTotal    = $cardWmiTotal.ValueLabel
+    $script:lblKpiWmiUnused   = $cardWmiUnused.ValueLabel
+    $script:panelKpiWmiUnused = $cardWmiUnused.Panel
 
     $flowKpiPanel.Controls.AddRange(@(
         $cardGpoTotal.Panel, $cardGpoLinked.Panel, $cardGpoUnlinked.Panel,
@@ -118,20 +118,20 @@ function Build-Tab0_Dashboard {
     ))
 
     # ---------------------------------------------------------------------
-    # SplitContainer: Links 4 System-Checks / Rechts WMI Status-Ueberblick
+    # SplitContainer: Audit & WMI-Status
     # ---------------------------------------------------------------------
     $splitDash = New-Object System.Windows.Forms.SplitContainer
     $splitDash.Dock = [System.Windows.Forms.DockStyle]::Fill
     $splitDash.SplitterDistance = 650
     $splitDash.SplitterWidth = 6
 
-    # Links: 4 Systemprüfungen / Handlungsempfehlungen
+    # Links: Audit-Tabelle
     $panelAudit = New-Object System.Windows.Forms.Panel
     $panelAudit.Dock = [System.Windows.Forms.DockStyle]::Fill
     $panelAudit.Padding = New-Object System.Windows.Forms.Padding(12, 6, 4, 12)
 
     $lblGridAudit = New-Object System.Windows.Forms.Label
-    $lblGridAudit.Text = "Systemprüfungen & Handlungsempfehlungen (4 Kern-Checks):"
+    $lblGridAudit.Text = "Sicherheits- & Konfigurationsanalyse (Handlungsempfehlungen):"
     $lblGridAudit.Dock = [System.Windows.Forms.DockStyle]::Top
     $lblGridAudit.Height = 26
     $lblGridAudit.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
@@ -198,14 +198,14 @@ function Build-Tab0_Dashboard {
     $script:gridDashboardAudit.Add_DataBindingComplete({
         if ($script:isClosing -or $null -eq $script:gridDashboardAudit -or $script:gridDashboardAudit.IsDisposed) { return }
         foreach ($row in $script:gridDashboardAudit.Rows) {
-            $status = "$($row.Cells['Status'].Value)"
-            if ($status -eq "Warnung") {
+            $sev = "$($row.Cells['Schweregrad'].Value)"
+            if ($sev -eq "Warnung") {
                 $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 248, 225)
                 $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(190, 85, 0)
-            } elseif ($status -eq "Kritisch") {
+            } elseif ($sev -eq "Kritisch") {
                 $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 235)
                 $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(180, 20, 20)
-            } else {
+            } elseif ($sev -eq "OK") {
                 $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(240, 250, 240)
                 $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::DarkGreen
             }
@@ -227,19 +227,19 @@ function Build-Tab0_Dashboard {
     })
 
     # ---------------------------------------------------------------------
-    # Laderoutine: 4 System-Checks und WMI Status
+    # Laderoutine
     # ---------------------------------------------------------------------
     $script:Invoke_LoadDashboard = {
         if ($script:isClosing -or $form.IsDisposed) { return }
 
-        $tDN = if (-not [string]::IsNullOrWhiteSpace($domainDN)) { $domainDN } else { ([ADSI]"LDAP://RootDSE").defaultNamingContext.Value }
+        $tDN = if ($domainDN) { $domainDN } else { ([ADSI]"LDAP://RootDSE").defaultNamingContext.Value }
 
         if ($script:pbarGlobal) {
             $script:pbarGlobal.Visible = $true
             $script:pbarGlobal.Minimum = 0
             $script:pbarGlobal.Value = 0
         }
-        if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Erstelle Dashboard- & Systempruefungen..." }
+        if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Erstelle Dashboard- & WMI-Statusanalyse..." }
         $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         [System.Windows.Forms.Application]::DoEvents()
 
@@ -247,16 +247,8 @@ function Build-Tab0_Dashboard {
         $gpoRoot = $null; $gpoSearcher = $null
         $somRoot = $null; $somSearcher = $null
 
+        $auditFindings = [System.Collections.Generic.List[PSCustomObject]]::new()
         $wmiStatusList = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-        function Get-LdapProp ($resultItem, [string]$propName) {
-            if ($null -eq $resultItem -or $null -eq $resultItem.Properties) { return "" }
-            $prop = $resultItem.Properties[$propName.ToLower()]
-            if ($null -ne $prop -and $prop.Count -gt 0) {
-                return "$($prop[0])"
-            }
-            return ""
-        }
 
         try {
             # 1. Links aus OUs & Domain ermitteln
@@ -270,8 +262,8 @@ function Build-Tab0_Dashboard {
                 $somResults = $somSearcher.FindAll()
 
                 foreach ($sr in $somResults) {
-                    $rawGplink = Get-LdapProp $sr "gplink"
-                    if (-not [string]::IsNullOrWhiteSpace($rawGplink)) {
+                    if ($sr.Properties["gplink"]) {
+                        $rawGplink = "$($sr.Properties['gplink'][0])"
                         $regexMatches = [regex]::Matches($rawGplink, '\[LDAP://cn=(?<guid>{[a-fA-F0-9-]+}),cn=policies,cn=system,[^;]+;\d+\]')
                         foreach ($m in $regexMatches) {
                             $clean = $m.Groups["guid"].Value.Trim('{','}').ToUpper()
@@ -283,9 +275,6 @@ function Build-Tab0_Dashboard {
 
             # 2. GPOs analysieren & WMI-Verbindungen kartieren
             $totalGpos = 0; $linkedGposCount = 0; $unlinkedGposCount = 0; $disabledGposCount = 0
-            $unlinkedGpoNames = [System.Collections.Generic.List[string]]::new()
-            $disabledGpoNames = [System.Collections.Generic.List[string]]::new()
-
             $wmiUsageByGuid = @{}
             $wmiUsageByName = @{}
 
@@ -319,12 +308,24 @@ function Build-Tab0_Dashboard {
                         $linkedGposCount++
                     } else {
                         $unlinkedGposCount++
-                        $unlinkedGpoNames.Add($g.DisplayName)
+                        $auditFindings.Add([PSCustomObject]@{
+                            "Bereich"             = "Verknuepfung"
+                            "Schweregrad"         = "Warnung"
+                            "GPO / Objekt"        = $g.DisplayName
+                            "Feststellung"        = "GPO ist an keiner OU und nicht an der Domaene verknuepft (verwaist)."
+                            "Handlungsempfehlung" = "Pruefen, ob die Richtlinie noch benoetigt wird; andernfalls archivieren/loeschen."
+                        })
                     }
 
                     if ($g.GpoStatus -eq "AllSettingsDisabled") {
                         $disabledGposCount++
-                        $disabledGpoNames.Add($g.DisplayName)
+                        $auditFindings.Add([PSCustomObject]@{
+                            "Bereich"             = "Status"
+                            "Schweregrad"         = "Warnung"
+                            "GPO / Objekt"        = $g.DisplayName
+                            "Feststellung"        = "Richtlinie ist komplett deaktiviert (alle Einstellungen abgeschaltet)."
+                            "Handlungsempfehlung" = "Reaktivieren oder bereinigen, um GPO-Laufzeiten nicht unnoetig zu verlaengern."
+                        })
                     }
 
                     if ($g.WmiFilter) {
@@ -334,7 +335,6 @@ function Build-Tab0_Dashboard {
                 }
             } catch {}
 
-            # LDAP Fallback falls Get-GPO fehlschlägt
             if (-not $nativeSuccess) {
                 $gpoRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=Policies,CN=System,$tDN")
                 $gpoSearcher = [System.DirectoryServices.DirectorySearcher]::new($gpoRoot)
@@ -346,14 +346,10 @@ function Build-Tab0_Dashboard {
                 $totalGpos = $gpoResults.Count
 
                 foreach ($gp in $gpoResults) {
-                    $dName = Get-LdapProp $gp "displayname"
-                    $cName = Get-LdapProp $gp "name"
-                    $gName = if (-not [string]::IsNullOrWhiteSpace($dName)) { $dName } else { $cName }
-                    $gGuid = $cName.Trim('{','}').ToUpper()
-
-                    $flagsStr = Get-LdapProp $gp "flags"
-                    $flags = if (-not [string]::IsNullOrWhiteSpace($flagsStr)) { [int]$flagsStr } else { 0 }
-                    $wqlRef = Get-LdapProp $gp "gpcwqlfilter"
+                    $gName = if ($gp.Properties["displayname"]) { "$($gp.Properties['displayname'][0])" } else { "$($gp.Properties['name'][0])" }
+                    $gGuid = "$($gp.Properties['name'][0])".Trim('{','}').ToUpper()
+                    $flags = if ($gp.Properties["flags"]) { [int]$gp.Properties["flags"][0] } else { 0 }
+                    $wqlRef = if ($gp.Properties["gpcwqlfilter"]) { "$($gp.Properties['gpcwqlfilter'][0])" } else { "" }
 
                     if (-not [string]::IsNullOrWhiteSpace($wqlRef)) {
                         if ($wqlRef -match '(?i)([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})') {
@@ -368,12 +364,24 @@ function Build-Tab0_Dashboard {
                         $linkedGposCount++
                     } else {
                         $unlinkedGposCount++
-                        $unlinkedGpoNames.Add($gName)
+                        $auditFindings.Add([PSCustomObject]@{
+                            "Bereich"             = "Verknuepfung"
+                            "Schweregrad"         = "Warnung"
+                            "GPO / Objekt"        = $gName
+                            "Feststellung"        = "GPO ist an keiner OU und nicht an der Domaene verknuepft (verwaist)."
+                            "Handlungsempfehlung" = "Pruefen, ob die Richtlinie noch benoetigt wird; andernfalls archivieren/loeschen."
+                        })
                     }
 
                     if ($flags -eq 3) {
                         $disabledGposCount++
-                        $disabledGpoNames.Add($gName)
+                        $auditFindings.Add([PSCustomObject]@{
+                            "Bereich"             = "Status"
+                            "Schweregrad"         = "Warnung"
+                            "GPO / Objekt"        = $gName
+                            "Feststellung"        = "Richtlinie ist komplett deaktiviert (alle Einstellungen abgeschaltet)."
+                            "Handlungsempfehlung" = "Reaktivieren oder bereinigen, um GPO-Laufzeiten nicht unnoetig zu verlaengern."
+                        })
                     }
                 }
             }
@@ -381,7 +389,6 @@ function Build-Tab0_Dashboard {
             # 3. WMI-Filter analysieren
             $wmiTotalCount = 0
             $wmiUnusedCount = 0
-            $unusedWmiNames = [System.Collections.Generic.List[string]]::new()
 
             $wmiRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=SOM,CN=WMIPolicy,CN=System,$tDN")
             $wmiSearcher = [System.DirectoryServices.DirectorySearcher]::new($wmiRoot)
@@ -393,18 +400,9 @@ function Build-Tab0_Dashboard {
             $wmiTotalCount = $wmiResults.Count
 
             foreach ($w in $wmiResults) {
-                $fName = Get-LdapProp $w "mswmi-name"
-                if ([string]::IsNullOrWhiteSpace($fName)) { $fName = "Unbenannter Filter" }
-                $fName = $fName.Trim()
-
-                $rawId = Get-LdapProp $w "mswmi-id"
-                if ([string]::IsNullOrWhiteSpace($rawId)) { $rawId = Get-LdapProp $w "name" }
-
-                $cleanId = if ($rawId -match '(?i)([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})') {
-                    $matches[1].ToUpper()
-                } else {
-                    $rawId.Trim('{','}').ToUpper()
-                }
+                $fName = if ($w.Properties["mswmi-name"]) { "$($w.Properties['mswmi-name'][0])".Trim() } else { "Unbenannter Filter" }
+                $rawId = if ($w.Properties["mswmi-id"]) { "$($w.Properties['mswmi-id'][0])" } elseif ($w.Properties["name"]) { "$($w.Properties['name'][0])" } else { "" }
+                $cleanId = if ($rawId -match '(?i)([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})') { $matches[1].ToUpper() } else { $rawId.Trim('{','}').ToUpper() }
 
                 $linkedGpos = [System.Collections.Generic.List[string]]::new()
                 if (-not [string]::IsNullOrWhiteSpace($cleanId) -and $wmiUsageByGuid.ContainsKey($cleanId)) {
@@ -421,7 +419,13 @@ function Build-Tab0_Dashboard {
 
                 if ($gpoCount -eq 0) {
                     $wmiUnusedCount++
-                    $unusedWmiNames.Add($fName)
+                    $auditFindings.Add([PSCustomObject]@{
+                        "Bereich"             = "WMI-Filter"
+                        "Schweregrad"         = "Warnung"
+                        "GPO / Objekt"        = $fName
+                        "Feststellung"        = "WMI-Filter wird derzeit von keiner einzigen Gruppenrichtlinie verwendet."
+                        "Handlungsempfehlung" = "In Tab '5. WMI Filter Analyse' pruefen und verwaiste Filter bereinigen."
+                    })
                 }
 
                 $wmiStatusList.Add([PSCustomObject]@{
@@ -464,90 +468,24 @@ function Build-Tab0_Dashboard {
                 $script:panelKpiWmiUnused.BackColor = [System.Drawing.Color]::White
             }
 
-            # -------------------------------------------------------------
-            # 5. Die 4 Kern-Systempruefungen (Handlungsempfehlungen)
-            # -------------------------------------------------------------
-            $coreChecks = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-            # CHECK 1: Verwaiste (nicht verknuepfte) GPOs
-            if ($unlinkedGposCount -eq 0) {
-                $coreChecks.Add([PSCustomObject]@{
-                    "Prüfung"             = "1. Verknüpfungs-Status"
-                    "Status"              = "OK"
-                    "Feststellung"        = "Alle GPOs sind an OUs oder der Domäne verknüpft."
-                    "Handlungsempfehlung" = "Keine Maßnahmen erforderlich."
-                })
-            } else {
-                $sampleList = ($unlinkedGpoNames | Select-Object -First 3) -join ", "
-                if ($unlinkedGpoNames.Count -gt 3) { $sampleList += " ..." }
-                $coreChecks.Add([PSCustomObject]@{
-                    "Prüfung"             = "1. Verknüpfungs-Status"
-                    "Status"              = "Warnung"
-                    "Feststellung"        = "$unlinkedGposCount GPO(s) ohne Verknüpfung gefunden ($sampleList)."
-                    "Handlungsempfehlung" = "Prüfen, ob Richtlinien noch benötigt werden; verwaiste GPOs bereinigen."
+            # 5. Grids zuweisen
+            if ($auditFindings.Count -eq 0) {
+                $auditFindings.Add([PSCustomObject]@{
+                    "Bereich"             = "Gesamtsystem"
+                    "Schweregrad"         = "OK"
+                    "GPO / Objekt"        = "-- Keine Auffaelligkeiten --"
+                    "Feststellung"        = "Alle Richtlinien sind verknuepft, aktiv und alle WMI-Filter befinden sich in Nutzung."
+                    "Handlungsempfehlung" = "Keine Massnahmen erforderlich."
                 })
             }
 
-            # CHECK 2: Deaktivierte GPOs
-            if ($disabledGposCount -eq 0) {
-                $coreChecks.Add([PSCustomObject]@{
-                    "Prüfung"             = "2. Deaktivierte GPOs"
-                    "Status"              = "OK"
-                    "Feststellung"        = "Keine vollständig deaktivierten GPOs vorhanden."
-                    "Handlungsempfehlung" = "Keine Maßnahmen erforderlich."
-                })
-            } else {
-                $sampleList = ($disabledGpoNames | Select-Object -First 3) -join ", "
-                if ($disabledGpoNames.Count -gt 3) { $sampleList += " ..." }
-                $coreChecks.Add([PSCustomObject]@{
-                    "Prüfung"             = "2. Deaktivierte GPOs"
-                    "Status"              = "Warnung"
-                    "Feststellung"        = "$disabledGposCount GPO(s) sind komplett deaktiviert ($sampleList)."
-                    "Handlungsempfehlung" = "Reaktivieren oder bereinigen, um Verarbeitungszeiten zu optimieren."
-                })
-            }
-
-            # CHECK 3: Sicherung & Konsistenz
-            $coreChecks.Add([PSCustomObject]@{
-                "Prüfung"             = "3. Sicherungs-Status"
-                "Status"              = "OK"
-                "Feststellung"        = "Aktueller Domänenbestand eingelesen ($totalGpos GPOs aktiv im AD)."
-                "Handlungsempfehlung" = "Regelmäßige GPO-Backups in Tab '3. GPO Backup' durchführen."
-            })
-
-            # CHECK 4: WMI-Filter Verwendungsprüfung (Gruen wenn alle genutzt, Orange wenn ungenutzt)
-            if ($wmiTotalCount -eq 0) {
-                $coreChecks.Add([PSCustomObject]@{
-                    "Prüfung"             = "4. WMI-Filter Status"
-                    "Status"              = "OK"
-                    "Feststellung"        = "Keine WMI-Filter in der Domäne konfiguriert."
-                    "Handlungsempfehlung" = "Keine Maßnahmen erforderlich."
-                })
-            } elseif ($wmiUnusedCount -eq 0) {
-                $coreChecks.Add([PSCustomObject]@{
-                    "Prüfung"             = "4. WMI-Filter Status"
-                    "Status"              = "OK"
-                    "Feststellung"        = "Alle WMI-Filter ($wmiTotalCount/$wmiTotalCount) sind Richtlinien zugewiesen."
-                    "Handlungsempfehlung" = "Optimal. Keine verwaisten WMI-Filter vorhanden."
-                })
-            } else {
-                $sampleWmi = ($unusedWmiNames | Select-Object -First 3) -join ", "
-                if ($unusedWmiNames.Count -gt 3) { $sampleWmi += " ..." }
-                $coreChecks.Add([PSCustomObject]@{
-                    "Prüfung"             = "4. WMI-Filter Status"
-                    "Status"              = "Warnung"
-                    "Feststellung"        = "$wmiUnusedCount von $wmiTotalCount WMI-Filter(n) sind nicht zugewiesen ($sampleWmi)."
-                    "Handlungsempfehlung" = "In Tab '5. WMI Filter Analyse' prüfen und nicht benötigte Filter löschen."
-                })
-            }
-
-            # 6. Grids zuweisen
             $arrAudit = [System.Collections.ArrayList]::new()
-            foreach ($item in $coreChecks) { [void]$arrAudit.Add($item) }
+            foreach ($item in $auditFindings) { [void]$arrAudit.Add($item) }
             $script:gridDashboardAudit.DataSource = $arrAudit
 
-            if ($script:gridDashboardAudit.Columns["Prüfung"])             { $script:gridDashboardAudit.Columns["Prüfung"].FillWeight = 25 }
-            if ($script:gridDashboardAudit.Columns["Status"])              { $script:gridDashboardAudit.Columns["Status"].FillWeight = 15 }
+            if ($script:gridDashboardAudit.Columns["Bereich"])             { $script:gridDashboardAudit.Columns["Bereich"].FillWeight = 20 }
+            if ($script:gridDashboardAudit.Columns["Schweregrad"])         { $script:gridDashboardAudit.Columns["Schweregrad"].FillWeight = 18 }
+            if ($script:gridDashboardAudit.Columns["GPO / Objekt"])        { $script:gridDashboardAudit.Columns["GPO / Objekt"].FillWeight = 32 }
             if ($script:gridDashboardAudit.Columns["Feststellung"])        { $script:gridDashboardAudit.Columns["Feststellung"].FillWeight = 45 }
             if ($script:gridDashboardAudit.Columns["Handlungsempfehlung"]) { $script:gridDashboardAudit.Columns["Handlungsempfehlung"].FillWeight = 45 }
 
@@ -561,7 +499,7 @@ function Build-Tab0_Dashboard {
             if ($script:gridDashboardWmi.Columns["Verknuepfte GPOs"]) { $script:gridDashboardWmi.Columns["Verknuepfte GPOs"].FillWeight = 50 }
 
             $timeStr = (Get-Date).ToString("HH:mm:ss")
-            $script:lblDashboardStatus.Text = "Analyse aktualisiert um $timeStr Uhr | 4 Prüfungen abgeschlossen."
+            $script:lblDashboardStatus.Text = "Analyse aktualisiert um $timeStr Uhr | $($wmiTotalCount) WMI-Filter & $($totalGpos) GPOs geprueft."
             if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Dashboard-Analyse erfolgreich abgeschlossen." }
         } catch {
             if ($script:lblDashboardStatus) { $script:lblDashboardStatus.Text = "Fehler: $($_.Exception.Message)" }
@@ -579,6 +517,7 @@ function Build-Tab0_Dashboard {
         }
     }
 
+    # Event-Handler mit Null-Check
     $btnRefreshDashboard.Add_Click({
         if ($script:Invoke_LoadDashboard -is [scriptblock]) {
             & $script:Invoke_LoadDashboard
