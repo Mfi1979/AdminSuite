@@ -1,316 +1,587 @@
 # =========================================================================
-# Tab0_Dashboard.ps1 - Master-Detail Status-Ueberblick
+# Tab0_Dashboard.ps1 - Status & Dashboard Uebersicht (KPIs, Checks & WMI)
 # =========================================================================
 
 function Build-Tab0_Dashboard {
-    param($tabControl)
+    param($tabControl, $domainDN, $domainName)
+
+    # Sichere Domänenermittlung
+    if ([string]::IsNullOrWhiteSpace($domainName) -or [string]::IsNullOrWhiteSpace($domainDN)) {
+        try {
+            $curDom = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
+            if ([string]::IsNullOrWhiteSpace($domainName)) { $domainName = $curDom.Name }
+            if ([string]::IsNullOrWhiteSpace($domainDN)) {
+                $domainDN = ($curDom.Name.Split('.') | ForEach-Object { "DC=$_" }) -join ','
+            }
+        } catch {
+            if ([string]::IsNullOrWhiteSpace($domainDN)) {
+                $domainDN = ([ADSI]"LDAP://RootDSE").defaultNamingContext.Value
+            }
+            if ([string]::IsNullOrWhiteSpace($domainName)) {
+                $domainName = ($domainDN -replace 'DC=','' -replace ',','.')
+            }
+        }
+    }
 
     $tabDashboard = New-Object System.Windows.Forms.TabPage
     $tabDashboard.Text = "0. Status Ueberblick"
     $tabDashboard.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
     $tabDashboard.BackColor = [System.Drawing.Color]::FromArgb(246, 248, 252)
 
-    $splitDashboard = New-Object System.Windows.Forms.SplitContainer
-    $splitDashboard.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $splitDashboard.SplitterDistance = 680
-    $splitDashboard.SplitterWidth = 6
+    # ---------------------------------------------------------------------
+    # Top Panel
+    # ---------------------------------------------------------------------
+    $panelTop = New-Object System.Windows.Forms.Panel
+    $panelTop.Dock = [System.Windows.Forms.DockStyle]::Top
+    $panelTop.Height = 65
+    $panelTop.BackColor = [System.Drawing.Color]::FromArgb(242, 245, 250)
+    $panelTop.Padding = New-Object System.Windows.Forms.Padding(15, 12, 15, 12)
 
-    # Links: Master-Tabelle
-    $pnlDashLeft = New-Object System.Windows.Forms.Panel
-    $pnlDashLeft.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $pnlDashLeft.Padding = New-Object System.Windows.Forms.Padding(10, 10, 5, 10)
+    $lblDomainTitle = New-Object System.Windows.Forms.Label
+    $lblDomainTitle.Text = "Domaene: $domainName"
+    $lblDomainTitle.Location = New-Object System.Drawing.Point(15, 12)
+    $lblDomainTitle.AutoSize = $true
+    $lblDomainTitle.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+    $lblDomainTitle.ForeColor = [System.Drawing.Color]::FromArgb(24, 76, 120)
 
-    $lblDashTableTitle = New-Object System.Windows.Forms.Label
-    $lblDashTableTitle.Text = "Status-Pruefungen (Klick auf eine Zeile zeigt rechts Details):"
-    $lblDashTableTitle.Dock = [System.Windows.Forms.DockStyle]::Top
-    $lblDashTableTitle.Height = 28
-    $lblDashTableTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
+    $script:lblDashboardStatus = New-Object System.Windows.Forms.Label
+    $script:lblDashboardStatus.Text = "Bereit zum Laden der Systemanalyse."
+    $script:lblDashboardStatus.Location = New-Object System.Drawing.Point(16, 36)
+    $script:lblDashboardStatus.AutoSize = $true
+    $script:lblDashboardStatus.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Italic)
+    $script:lblDashboardStatus.ForeColor = [System.Drawing.Color]::FromArgb(100, 110, 125)
 
-    $script:gridDashMaster = New-Object System.Windows.Forms.DataGridView
-    $script:gridDashMaster.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $script:gridDashMaster.ReadOnly = $true
-    $script:gridDashMaster.AllowUserToAddRows = $false
-    $script:gridDashMaster.AllowUserToDeleteRows = $false
-    $script:gridDashMaster.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $script:gridDashMaster.MultiSelect = $false
-    $script:gridDashMaster.RowHeadersVisible = $false
-    $script:gridDashMaster.ColumnHeadersVisible = $true
-    $script:gridDashMaster.EnableHeadersVisualStyles = $false
-    $script:gridDashMaster.BackgroundColor = [System.Drawing.Color]::White
-    $script:gridDashMaster.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
-    $script:gridDashMaster.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
-    $script:gridDashMaster.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
-    $script:gridDashMaster.ColumnHeadersHeight = 34
-    $script:gridDashMaster.RowTemplate.Height = 34
-    $script:gridDashMaster.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    $btnRefreshDashboard = New-Object System.Windows.Forms.Button
+    $btnRefreshDashboard.Text = "Dashboard aktualisieren"
+    $btnRefreshDashboard.Dock = [System.Windows.Forms.DockStyle]::Right
+    $btnRefreshDashboard.Width = 190
+    $btnRefreshDashboard.BackColor = [System.Drawing.Color]::FromArgb(225, 238, 255)
+    $btnRefreshDashboard.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 
-    $pnlDashLeft.Controls.Add($script:gridDashMaster)
-    $pnlDashLeft.Controls.Add($lblDashTableTitle)
-    $splitDashboard.Panel1.Controls.Add($pnlDashLeft)
+    $panelTop.Controls.AddRange(@($btnRefreshDashboard, $lblDomainTitle, $script:lblDashboardStatus))
 
-    # Rechts: Detailansicht
-    $pnlDashRight = New-Object System.Windows.Forms.Panel
-    $pnlDashRight.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $pnlDashRight.Padding = New-Object System.Windows.Forms.Padding(5, 10, 10, 10)
+    # ---------------------------------------------------------------------
+    # Kachel-Generator
+    # ---------------------------------------------------------------------
+    function Create-DashboardCard ([string]$titleText, [System.Drawing.Color]$defaultValColor) {
+        $pCard = New-Object System.Windows.Forms.Panel
+        $pCard.Size = New-Object System.Drawing.Size(165, 80)
+        $pCard.BackColor = [System.Drawing.Color]::White
+        $pCard.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        $pCard.Margin = New-Object System.Windows.Forms.Padding(4, 4, 8, 4)
 
-    $lblDashDetailTitle = New-Object System.Windows.Forms.Label
-    $lblDashDetailTitle.Text = "Diagnose- & Detailansicht:"
-    $lblDashDetailTitle.Dock = [System.Windows.Forms.DockStyle]::Top
-    $lblDashDetailTitle.Height = 28
-    $lblDashDetailTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
+        $lblTitle = New-Object System.Windows.Forms.Label
+        $lblTitle.Text = $titleText
+        $lblTitle.Dock = [System.Windows.Forms.DockStyle]::Top
+        $lblTitle.Height = 24
+        $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 8.2, [System.Drawing.FontStyle]::Bold)
+        $lblTitle.ForeColor = [System.Drawing.Color]::FromArgb(100, 110, 130)
+        $lblTitle.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
 
-    $script:pnlDashBadge = New-Object System.Windows.Forms.Panel
-    $script:pnlDashBadge.Dock = [System.Windows.Forms.DockStyle]::Top
-    $script:pnlDashBadge.Height = 42
-    $script:pnlDashBadge.BackColor = [System.Drawing.Color]::FromArgb(235, 247, 235)
-    $script:pnlDashBadge.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        $lblVal = New-Object System.Windows.Forms.Label
+        $lblVal.Text = "-"
+        $lblVal.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $lblVal.Font = New-Object System.Drawing.Font("Segoe UI", 18, [System.Drawing.FontStyle]::Bold)
+        $lblVal.ForeColor = $defaultValColor
+        $lblVal.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
 
-    $script:lblDashBadgeText = New-Object System.Windows.Forms.Label
-    $script:lblDashBadgeText.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $script:lblDashBadgeText.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $script:lblDashBadgeText.Text = "Waehlen Sie links eine Pruefung aus."
-    $script:lblDashBadgeText.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $script:lblDashBadgeText.ForeColor = [System.Drawing.Color]::DarkGreen
-    $script:pnlDashBadge.Controls.Add($script:lblDashBadgeText)
-
-    $script:pnlDashActions = New-Object System.Windows.Forms.Panel
-    $script:pnlDashActions.Dock = [System.Windows.Forms.DockStyle]::Top
-    $script:pnlDashActions.Height = 44
-    $script:pnlDashActions.BackColor = [System.Drawing.Color]::Transparent
-    $script:pnlDashActions.Visible = $false
-
-    $btnExportUnlinkedCsv = New-Object System.Windows.Forms.Button
-    $btnExportUnlinkedCsv.Text = "Unlinked CSV Export"
-    $btnExportUnlinkedCsv.Location = New-Object System.Drawing.Point(0, 6)
-    $btnExportUnlinkedCsv.Size = New-Object System.Drawing.Size(160, 32)
-    $btnExportUnlinkedCsv.BackColor = [System.Drawing.Color]::FromArgb(230, 245, 230)
-
-    $btnSwitchToBackup = New-Object System.Windows.Forms.Button
-    $btnSwitchToBackup.Text = "Zu Register 3 (Backup / HTML) wechseln"
-    $btnSwitchToBackup.Location = New-Object System.Drawing.Point(170, 6)
-    $btnSwitchToBackup.Size = New-Object System.Drawing.Size(260, 32)
-    $btnSwitchToBackup.BackColor = [System.Drawing.Color]::FromArgb(255, 245, 230)
-
-    $script:pnlDashActions.Controls.Add($btnExportUnlinkedCsv)
-    $script:pnlDashActions.Controls.Add($btnSwitchToBackup)
-
-    $script:txtDashDetailText = New-Object System.Windows.Forms.TextBox
-    $script:txtDashDetailText.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $script:txtDashDetailText.Multiline = $true
-    $script:txtDashDetailText.ReadOnly = $true
-    $script:txtDashDetailText.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
-    $script:txtDashDetailText.BackColor = [System.Drawing.Color]::White
-    $script:txtDashDetailText.Font = New-Object System.Drawing.Font("Consolas", 9.5)
-
-    $pnlDashRight.Controls.Add($script:txtDashDetailText)
-    $pnlDashRight.Controls.Add($script:pnlDashActions)
-    $pnlDashRight.Controls.Add($script:pnlDashBadge)
-    $pnlDashRight.Controls.Add($lblDashDetailTitle)
-    $splitDashboard.Panel2.Controls.Add($pnlDashRight)
-
-    $tabDashboard.Controls.Add($splitDashboard)
-    $tabControl.TabPages.Add($tabDashboard)
-
-    # Dashboard-Logik
-    $script:Invoke_UpdateDashboard = {
-        if ($script:isClosing -or $null -eq $script:gridDashMaster -or $script:gridDashMaster.IsDisposed) { return }
-
-        $ddpReal = $script:rawOverviewList | Where-Object { [string]$_."GUID" -match $script:StandardDdpGuid } | Select-Object -First 1
-        $ddpByName = @($script:rawOverviewList | Where-Object { $_."GPO Name" -like "*Default Domain Policy*" })
-
-        $ddpLines = [System.Collections.Generic.List[string]]::new()
-        $ddpIsHealthy = $true
-
-        if ($ddpReal) {
-            $ddpLines.Add("Original Microsoft Standard-GUID vorhanden:")
-            $ddpLines.Add(" - Aktueller Name    : '$($ddpReal.'GPO Name')'")
-            $ddpLines.Add(" - Standard-GUID     : {$script:StandardDdpGuid}")
-            $ddpLines.Add(" - GPO-Status        : $($ddpReal.'Gesamt-Status')")
-            $ddpLines.Add(" - Verlinkt          : $($ddpReal.'Verlinkt') ($($ddpReal.'Link-Anzahl') Ziel(e))")
-
-            if ($ddpReal."GPO Name" -ne "Default Domain Policy") {
-                $ddpIsHealthy = $false
-                $ddpLines.Add(" ! HINWEIS: Richtlinie wurde umbenannt (Original: 'Default Domain Policy')")
-            }
-            if ($ddpReal."Verlinkt" -ne "Ja") {
-                $ddpIsHealthy = $false
-                $ddpLines.Add(" ! KRITISCH: Die echte DDP ist aktuell NICHT verlinkt!")
-            }
-        } else {
-            $ddpIsHealthy = $false
-            $ddpLines.Add("! KRITISCH: Keine GPO mit der Standard-DDP-GUID {$script:StandardDdpGuid} gefunden!")
-        }
-
-        if ($ddpByName.Count -gt 1 -or ($ddpByName.Count -eq 1 -and -not $ddpReal)) {
-            $ddpIsHealthy = $false
-            $ddpLines.Add("")
-            $ddpLines.Add("! GEFUNDENE NAMENSDUPLIKATE MIT FREMDER GUID:")
-            foreach ($dup in $ddpByName) {
-                if ($dup.GUID -notmatch $script:StandardDdpGuid) {
-                    $ddpLines.Add(" - '$($dup.'GPO Name')' -> GUID: $($dup.GUID)")
-                }
-            }
-        }
-
-        $script:dashDetailCache["DDP"] = @{
-            Healthy    = $ddpIsHealthy
-            Badge      = if ($ddpIsHealthy) { "[OK] Default Domain Policy ist sauber konfiguriert" } else { "[WARNUNG] Unregelmaessigkeiten bei der Default Domain Policy!" }
-            Text       = $ddpLines -join "`r`n"
-            IsUnlinked = $false
-        }
-
-        # DDCP Check
-        $ddcpReal = $script:rawOverviewList | Where-Object { [string]$_."GUID" -match $script:StandardDdcpGuid } | Select-Object -First 1
-        $ddcpByName = @($script:rawOverviewList | Where-Object { $_."GPO Name" -like "*Default Domain Controllers Policy*" })
-
-        $ddcpLines = [System.Collections.Generic.List[string]]::new()
-        $ddcpIsHealthy = $true
-
-        if ($ddcpReal) {
-            $ddcpLines.Add("Original Microsoft Standard-GUID vorhanden:")
-            $ddcpLines.Add(" - Aktueller Name    : '$($ddcpReal.'GPO Name')'")
-            $ddcpLines.Add(" - Standard-GUID     : {$script:StandardDdcpGuid}")
-            $ddcpLines.Add(" - GPO-Status        : $($ddcpReal.'Gesamt-Status')")
-            $ddcpLines.Add(" - Verlinkt          : $($ddcpReal.'Verlinkt') ($($ddcpReal.'Link-Anzahl') Ziel(e))")
-
-            if ($ddcpReal."GPO Name" -ne "Default Domain Controllers Policy") {
-                $ddcpIsHealthy = $false
-                $ddcpLines.Add(" ! HINWEIS: Richtlinie wurde umbenannt (Original: 'Default Domain Controllers Policy')")
-            }
-            if ($ddcpReal."Verlinkt" -ne "Ja") {
-                $ddcpIsHealthy = $false
-                $ddcpLines.Add(" ! KRITISCH: Die echte DDCP ist aktuell NICHT verlinkt!")
-            }
-        } else {
-            $ddcpIsHealthy = $false
-            $ddcpLines.Add("! KRITISCH: Keine GPO mit der Standard-DDCP-GUID {$script:StandardDdcpGuid} gefunden!")
-        }
-
-        if ($ddcpByName.Count -gt 1 -or ($ddcpByName.Count -eq 1 -and -not $ddcpReal)) {
-            $ddcpIsHealthy = $false
-            $ddcpLines.Add("")
-            $ddcpLines.Add("! GEFUNDENE NAMENSDUPLIKATE MIT FREMDER GUID:")
-            foreach ($dup in $ddcpByName) {
-                if ($dup.GUID -notmatch $script:StandardDdcpGuid) {
-                    $ddcpLines.Add(" - '$($dup.'GPO Name')' -> GUID: $($dup.GUID)")
-                }
-            }
-        }
-
-        $script:dashDetailCache["DDCP"] = @{
-            Healthy    = $ddcpIsHealthy
-            Badge      = if ($ddcpIsHealthy) { "[OK] Default Domain Controllers Policy ist sauber konfiguriert" } else { "[WARNUNG] Unregelmaessigkeiten bei der DDCP!" }
-            Text       = $ddcpLines -join "`r`n"
-            IsUnlinked = $false
-        }
-
-        # Unlinked GPOs
-        $unlinkedItems = @($script:rawOverviewList | Where-Object { $_."Verlinkt" -eq "Nein" })
-        $unlinkedLines = [System.Collections.Generic.List[string]]::new()
-        $unlinkedLines.Add("BESTANDSAUFNAHME DER NICHT VERLINKTEN RICHTLINIEN:")
-        $unlinkedLines.Add("Aktuell sind $($unlinkedItems.Count) von $($script:rawOverviewList.Count) Gruppenrichtlinien nirgendwo verlinkt (Unlinked).`r`n")
-        foreach ($u in $unlinkedItems) { $unlinkedLines.Add(" - $($u.'GPO Name') [$($u.'Gesamt-Status')] -> GUID: $($u.GUID)") }
-
-        $script:dashDetailCache["UNLINKED"] = @{
-            Healthy    = ($unlinkedItems.Count -eq 0)
-            Badge      = if ($unlinkedItems.Count -eq 0) { "[OK] Keine ungelinkten GPOs vorhanden" } else { "[HINWEIS] $($unlinkedItems.Count) nicht verlinkte GPOs gefunden" }
-            Text       = $unlinkedLines -join "`r`n"
-            IsUnlinked = $true
-        }
-
-        $tableData = [System.Collections.ArrayList]::new()
-        [void]$tableData.Add([PSCustomObject]@{
-            "Key"                  = "DDP"
-            "Komponente / Bereich" = "1. Default Domain Policy (DDP)"
-            "Status"               = if ($ddpIsHealthy) { "OK (Gueltig)" } else { "WARNUNG (Konflikt)" }
-            "Befund / Details"     = if ($ddpReal) { "$($ddpReal.'GPO Name') (Verlinkt: $($ddpReal.'Verlinkt'))" } else { "GUID fehlt!" }
-        })
-        [void]$tableData.Add([PSCustomObject]@{
-            "Key"                  = "DDCP"
-            "Komponente / Bereich" = "2. Default Domain Controllers Policy (DDCP)"
-            "Status"               = if ($ddcpIsHealthy) { "OK (Gueltig)" } else { "WARNUNG (Konflikt)" }
-            "Befund / Details"     = if ($ddcpReal) { "$($ddcpReal.'GPO Name') (Verlinkt: $($ddcpReal.'Verlinkt'))" } else { "GUID fehlt!" }
-        })
-        [void]$tableData.Add([PSCustomObject]@{
-            "Key"                  = "UNLINKED"
-            "Komponente / Bereich" = "3. Nicht verlinkte GPOs (Unlinked)"
-            "Status"               = if ($unlinkedItems.Count -eq 0) { "OK (0 GPOs)" } else { "Hinweis ($($unlinkedItems.Count) GPOs)" }
-            "Befund / Details"     = "$($unlinkedItems.Count) von $($script:rawOverviewList.Count) GPOs sind nicht verlinkt"
-        })
-
-        $script:gridDashMaster.DataSource = $tableData
-        if ($script:gridDashMaster.Columns["Key"]) { $script:gridDashMaster.Columns["Key"].Visible = $false }
-        if ($script:gridDashMaster.Rows.Count -gt 0) { $script:gridDashMaster.Rows[0].Selected = $true }
+        $pCard.Controls.AddRange(@($lblVal, $lblTitle))
+        return @{ Panel = $pCard; ValueLabel = $lblVal }
     }
 
-    $script:gridDashMaster.Add_DataBindingComplete({
-        if ($script:isClosing -or $null -eq $script:gridDashMaster -or $script:gridDashMaster.IsDisposed) { return }
-        foreach ($row in $script:gridDashMaster.Rows) {
-            $status = [string]$row.Cells["Status"].Value
-            if ($status -match "^WARNUNG") {
-                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 238, 204)
-                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(180, 50, 0)
-                $row.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(255, 210, 160)
-                $row.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::Black
-                $row.DefaultCellStyle.Font = New-Object System.Drawing.Font($script:gridDashMaster.Font, [System.Drawing.FontStyle]::Bold)
-            } elseif ($status -match "^Hinweis") {
+    $flowKpiPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $flowKpiPanel.Dock = [System.Windows.Forms.DockStyle]::Top
+    $flowKpiPanel.Height = 96
+    $flowKpiPanel.Padding = New-Object System.Windows.Forms.Padding(12, 4, 12, 4)
+    $flowKpiPanel.BackColor = [System.Drawing.Color]::FromArgb(246, 248, 252)
+
+    $cardGpoTotal    = Create-DashboardCard "GPOS GESAMT" ([System.Drawing.Color]::FromArgb(24, 76, 120))
+    $cardGpoLinked   = Create-DashboardCard "VERKNUEPFT" ([System.Drawing.Color]::DarkGreen)
+    $cardGpoUnlinked = Create-DashboardCard "NICHT VERKNUEPFT" ([System.Drawing.Color]::FromArgb(215, 85, 0))
+    $cardGpoDisabled = Create-DashboardCard "DEAKTIVIERT" ([System.Drawing.Color]::FromArgb(180, 50, 50))
+    $cardWmiTotal    = Create-DashboardCard "WMI-FILTER GESAMT" ([System.Drawing.Color]::FromArgb(24, 76, 120))
+    $cardWmiUnused   = Create-DashboardCard "UNGENUTZTE WMI" ([System.Drawing.Color]::DarkGreen)
+
+    $script:lblKpiGpoTotal      = $cardGpoTotal.ValueLabel
+    $script:lblKpiGpoLinked     = $cardGpoLinked.ValueLabel
+    $script:lblKpiGpoUnlinked   = $cardGpoUnlinked.ValueLabel
+    $script:panelKpiGpoUnlinked = $cardGpoUnlinked.Panel
+    $script:lblKpiGpoDisabled   = $cardGpoDisabled.ValueLabel
+    $script:panelKpiGpoDisabled = $cardGpoDisabled.Panel
+    $script:lblKpiWmiTotal      = $cardWmiTotal.ValueLabel
+    $script:lblKpiWmiUnused     = $cardWmiUnused.ValueLabel
+    $script:panelKpiWmiUnused   = $cardWmiUnused.Panel
+
+    $flowKpiPanel.Controls.AddRange(@(
+        $cardGpoTotal.Panel, $cardGpoLinked.Panel, $cardGpoUnlinked.Panel,
+        $cardGpoDisabled.Panel, $cardWmiTotal.Panel, $cardWmiUnused.Panel
+    ))
+
+    # ---------------------------------------------------------------------
+    # SplitContainer: Links 4 System-Checks / Rechts WMI Status-Ueberblick
+    # ---------------------------------------------------------------------
+    $splitDash = New-Object System.Windows.Forms.SplitContainer
+    $splitDash.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $splitDash.SplitterDistance = 650
+    $splitDash.SplitterWidth = 6
+
+    # Links: 4 Systemprüfungen / Handlungsempfehlungen
+    $panelAudit = New-Object System.Windows.Forms.Panel
+    $panelAudit.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelAudit.Padding = New-Object System.Windows.Forms.Padding(12, 6, 4, 12)
+
+    $lblGridAudit = New-Object System.Windows.Forms.Label
+    $lblGridAudit.Text = "Systemprüfungen & Handlungsempfehlungen (4 Kern-Checks):"
+    $lblGridAudit.Dock = [System.Windows.Forms.DockStyle]::Top
+    $lblGridAudit.Height = 26
+    $lblGridAudit.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
+
+    $script:gridDashboardAudit = New-Object System.Windows.Forms.DataGridView
+    $script:gridDashboardAudit.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $script:gridDashboardAudit.ReadOnly = $true
+    $script:gridDashboardAudit.AllowUserToAddRows = $false
+    $script:gridDashboardAudit.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
+    $script:gridDashboardAudit.MultiSelect = $false
+    $script:gridDashboardAudit.RowHeadersVisible = $false
+    $script:gridDashboardAudit.BackgroundColor = [System.Drawing.Color]::White
+    $script:gridDashboardAudit.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
+    $script:gridDashboardAudit.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
+    $script:gridDashboardAudit.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $script:gridDashboardAudit.ColumnHeadersHeight = 30
+    $script:gridDashboardAudit.RowTemplate.Height = 26
+    $script:gridDashboardAudit.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(249, 251, 254)
+    $script:gridDashboardAudit.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+
+    $panelAudit.Controls.Add($script:gridDashboardAudit)
+    $panelAudit.Controls.Add($lblGridAudit)
+    $splitDash.Panel1.Controls.Add($panelAudit)
+
+    # Rechts: WMI-Status-Tabelle
+    $panelWmi = New-Object System.Windows.Forms.Panel
+    $panelWmi.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelWmi.Padding = New-Object System.Windows.Forms.Padding(4, 6, 12, 12)
+
+    $lblGridWmi = New-Object System.Windows.Forms.Label
+    $lblGridWmi.Text = "WMI-Filter Status-Ueberblick (Domaene):"
+    $lblGridWmi.Dock = [System.Windows.Forms.DockStyle]::Top
+    $lblGridWmi.Height = 26
+    $lblGridWmi.Font = New-Object System.Drawing.Font("Segoe UI", 9.5, [System.Drawing.FontStyle]::Bold)
+
+    $script:gridDashboardWmi = New-Object System.Windows.Forms.DataGridView
+    $script:gridDashboardWmi.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $script:gridDashboardWmi.ReadOnly = $true
+    $script:gridDashboardWmi.AllowUserToAddRows = $false
+    $script:gridDashboardWmi.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
+    $script:gridDashboardWmi.MultiSelect = $false
+    $script:gridDashboardWmi.RowHeadersVisible = $false
+    $script:gridDashboardWmi.BackgroundColor = [System.Drawing.Color]::White
+    $script:gridDashboardWmi.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
+    $script:gridDashboardWmi.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(230, 236, 245)
+    $script:gridDashboardWmi.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $script:gridDashboardWmi.ColumnHeadersHeight = 30
+    $script:gridDashboardWmi.RowTemplate.Height = 26
+    $script:gridDashboardWmi.AlternatingRowsDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(249, 251, 254)
+    $script:gridDashboardWmi.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+
+    $panelWmi.Controls.Add($script:gridDashboardWmi)
+    $panelWmi.Controls.Add($lblGridWmi)
+    $splitDash.Panel2.Controls.Add($panelWmi)
+
+    $tabDashboard.Controls.Add($splitDash)
+    $tabDashboard.Controls.Add($flowKpiPanel)
+    $tabDashboard.Controls.Add($panelTop)
+    $tabControl.TabPages.Add($tabDashboard)
+
+    # ---------------------------------------------------------------------
+    # Farbgebung Tabellen
+    # ---------------------------------------------------------------------
+    $script:gridDashboardAudit.Add_DataBindingComplete({
+        if ($script:isClosing -or $null -eq $script:gridDashboardAudit -or $script:gridDashboardAudit.IsDisposed) { return }
+        foreach ($row in $script:gridDashboardAudit.Rows) {
+            $status = "$($row.Cells['Status'].Value)"
+            if ($status -eq "Warnung") {
                 $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 248, 225)
-                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(160, 90, 0)
-                $row.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(255, 230, 170)
-                $row.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::Black
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(190, 85, 0)
+            } elseif ($status -eq "Kritisch") {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 235, 235)
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(180, 20, 20)
+            } else {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(240, 250, 240)
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::DarkGreen
+            }
+        }
+    })
+
+    $script:gridDashboardWmi.Add_DataBindingComplete({
+        if ($script:isClosing -or $null -eq $script:gridDashboardWmi -or $script:gridDashboardWmi.IsDisposed) { return }
+        foreach ($row in $script:gridDashboardWmi.Rows) {
+            $status = "$($row.Cells['Status'].Value)"
+            if ($status -match "Ungenutzt|Verwaist") {
+                $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(255, 248, 225)
+                $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(180, 90, 0)
             } else {
                 $row.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(235, 247, 235)
                 $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::DarkGreen
-                $row.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(200, 235, 200)
-                $row.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::Black
             }
         }
     })
 
-    $script:gridDashMaster.Add_SelectionChanged({
-        if ($script:isClosing -or $null -eq $script:gridDashMaster -or $script:gridDashMaster.IsDisposed) { return }
-        if ($script:gridDashMaster.SelectedRows.Count -gt 0) {
-            $key = [string]$script:gridDashMaster.SelectedRows[0].Cells["Key"].Value
-            if ($script:dashDetailCache.ContainsKey($key)) {
-                $entry = $script:dashDetailCache[$key]
-                if ($script:lblDashBadgeText -and -not $script:lblDashBadgeText.IsDisposed) {
-                    $script:lblDashBadgeText.Text = $entry.Badge
+    # ---------------------------------------------------------------------
+    # Laderoutine: 4 System-Checks und WMI Status
+    # ---------------------------------------------------------------------
+    $script:Invoke_LoadDashboard = {
+        if ($script:isClosing -or $form.IsDisposed) { return }
+
+        $tDN = if (-not [string]::IsNullOrWhiteSpace($domainDN)) { $domainDN } else { ([ADSI]"LDAP://RootDSE").defaultNamingContext.Value }
+
+        if ($script:pbarGlobal) {
+            $script:pbarGlobal.Visible = $true
+            $script:pbarGlobal.Minimum = 0
+            $script:pbarGlobal.Value = 0
+        }
+        if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Erstelle Dashboard- & Systempruefungen..." }
+        $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        [System.Windows.Forms.Application]::DoEvents()
+
+        $wmiRoot = $null; $wmiSearcher = $null
+        $gpoRoot = $null; $gpoSearcher = $null
+        $somRoot = $null; $somSearcher = $null
+
+        $wmiStatusList = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+        function Get-LdapProp ($resultItem, [string]$propName) {
+            if ($null -eq $resultItem -or $null -eq $resultItem.Properties) { return "" }
+            $prop = $resultItem.Properties[$propName.ToLower()]
+            if ($null -ne $prop -and $prop.Count -gt 0) {
+                return "$($prop[0])"
+            }
+            return ""
+        }
+
+        try {
+            # 1. Links aus OUs & Domain ermitteln
+            $linkedGpoGuids = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            try {
+                $somRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://$tDN")
+                $somSearcher = [System.DirectoryServices.DirectorySearcher]::new($somRoot)
+                $somSearcher.PageSize = 1000
+                $somSearcher.Filter = "(|(objectClass=organizationalUnit)(objectClass=domainDNS))"
+                $somSearcher.PropertiesToLoad.Add("gplink") | Out-Null
+                $somResults = $somSearcher.FindAll()
+
+                foreach ($sr in $somResults) {
+                    $rawGplink = Get-LdapProp $sr "gplink"
+                    if (-not [string]::IsNullOrWhiteSpace($rawGplink)) {
+                        $regexMatches = [regex]::Matches($rawGplink, '\[LDAP://cn=(?<guid>{[a-fA-F0-9-]+}),cn=policies,cn=system,[^;]+;\d+\]')
+                        foreach ($m in $regexMatches) {
+                            $clean = $m.Groups["guid"].Value.Trim('{','}').ToUpper()
+                            [void]$linkedGpoGuids.Add($clean)
+                        }
+                    }
                 }
-                if ($script:txtDashDetailText -and -not $script:txtDashDetailText.IsDisposed) {
-                    $script:txtDashDetailText.Text = $entry.Text
+            } catch {}
+
+            # 2. GPOs analysieren & WMI-Verbindungen kartieren
+            $totalGpos = 0; $linkedGposCount = 0; $unlinkedGposCount = 0; $disabledGposCount = 0
+            $unlinkedGpoNames = [System.Collections.Generic.List[string]]::new()
+            $disabledGpoNames = [System.Collections.Generic.List[string]]::new()
+
+            $wmiUsageByGuid = @{}
+            $wmiUsageByName = @{}
+
+            function Map-LocalGpoToWmi ($key, $gpoName, $isGuid = $false) {
+                if ([string]::IsNullOrWhiteSpace($key)) { return }
+                $clean = if ($isGuid) {
+                    if ($key -match '(?i)([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})') { $matches[1].ToUpper() } else { $key.Trim('{','}').ToUpper() }
+                } else {
+                    $key.Trim().ToLower()
                 }
-                if ($script:pnlDashActions -and -not $script:pnlDashActions.IsDisposed) {
-                    $script:pnlDashActions.Visible = $entry.IsUnlinked
+
+                $dict = if ($isGuid) { $wmiUsageByGuid } else { $wmiUsageByName }
+                if (-not $dict.ContainsKey($clean)) {
+                    $dict[$clean] = [System.Collections.Generic.List[string]]::new()
                 }
-                if ($script:pnlDashBadge -and -not $script:pnlDashBadge.IsDisposed) {
-                    if ($entry.Healthy) {
-                        $script:pnlDashBadge.BackColor = [System.Drawing.Color]::FromArgb(235, 247, 235)
-                        if ($script:lblDashBadgeText) { $script:lblDashBadgeText.ForeColor = [System.Drawing.Color]::DarkGreen }
+                if (-not $dict[$clean].Contains($gpoName)) {
+                    $dict[$clean].Add($gpoName)
+                }
+            }
+
+            $nativeSuccess = $false
+            try {
+                $allGposNative = Get-GPO -All -ErrorAction Stop
+                $nativeSuccess = $true
+                $totalGpos = $allGposNative.Count
+
+                foreach ($g in $allGposNative) {
+                    $gGuid = $g.Id.ToString().Trim('{','}').ToUpper()
+
+                    if ($linkedGpoGuids.Contains($gGuid)) {
+                        $linkedGposCount++
                     } else {
-                        $script:pnlDashBadge.BackColor = [System.Drawing.Color]::FromArgb(255, 238, 204)
-                        if ($script:lblDashBadgeText) { $script:lblDashBadgeText.ForeColor = [System.Drawing.Color]::FromArgb(180, 50, 0) }
+                        $unlinkedGposCount++
+                        $unlinkedGpoNames.Add($g.DisplayName)
+                    }
+
+                    if ($g.GpoStatus -eq "AllSettingsDisabled") {
+                        $disabledGposCount++
+                        $disabledGpoNames.Add($g.DisplayName)
+                    }
+
+                    if ($g.WmiFilter) {
+                        if ($g.WmiFilter.Name) { Map-LocalGpoToWmi $g.WmiFilter.Name $g.DisplayName $false }
+                        if ($g.WmiFilter.Id)   { Map-LocalGpoToWmi $g.WmiFilter.Id.ToString() $g.DisplayName $true }
+                    }
+                }
+            } catch {}
+
+            # LDAP Fallback falls Get-GPO fehlschlägt
+            if (-not $nativeSuccess) {
+                $gpoRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=Policies,CN=System,$tDN")
+                $gpoSearcher = [System.DirectoryServices.DirectorySearcher]::new($gpoRoot)
+                $gpoSearcher.PageSize = 1000
+                $gpoSearcher.Filter = "(objectClass=groupPolicyContainer)"
+                $gpoSearcher.PropertiesToLoad.AddRange(@("displayName", "name", "flags", "gPCWQLFilter"))
+                $gpoResults = $gpoSearcher.FindAll()
+
+                $totalGpos = $gpoResults.Count
+
+                foreach ($gp in $gpoResults) {
+                    $dName = Get-LdapProp $gp "displayname"
+                    $cName = Get-LdapProp $gp "name"
+                    $gName = if (-not [string]::IsNullOrWhiteSpace($dName)) { $dName } else { $cName }
+                    $gGuid = $cName.Trim('{','}').ToUpper()
+
+                    $flagsStr = Get-LdapProp $gp "flags"
+                    $flags = if (-not [string]::IsNullOrWhiteSpace($flagsStr)) { [int]$flagsStr } else { 0 }
+                    $wqlRef = Get-LdapProp $gp "gpcwqlfilter"
+
+                    if (-not [string]::IsNullOrWhiteSpace($wqlRef)) {
+                        if ($wqlRef -match '(?i)([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})') {
+                            Map-LocalGpoToWmi $matches[1] $gName $true
+                        }
+                        if ($wqlRef -match '\[\s*[^;]+;\s*(?<ref>[^;]+);\s*\d+\s*\]') {
+                            Map-LocalGpoToWmi $matches["ref"] $gName $false
+                        }
+                    }
+
+                    if ($linkedGpoGuids.Contains($gGuid)) {
+                        $linkedGposCount++
+                    } else {
+                        $unlinkedGposCount++
+                        $unlinkedGpoNames.Add($gName)
+                    }
+
+                    if ($flags -eq 3) {
+                        $disabledGposCount++
+                        $disabledGpoNames.Add($gName)
                     }
                 }
             }
+
+            # 3. WMI-Filter analysieren
+            $wmiTotalCount = 0
+            $wmiUnusedCount = 0
+            $unusedWmiNames = [System.Collections.Generic.List[string]]::new()
+
+            $wmiRoot = [System.DirectoryServices.DirectoryEntry]::new("LDAP://CN=SOM,CN=WMIPolicy,CN=System,$tDN")
+            $wmiSearcher = [System.DirectoryServices.DirectorySearcher]::new($wmiRoot)
+            $wmiSearcher.PageSize = 1000
+            $wmiSearcher.Filter = "(objectClass=msWMI-Som)"
+            $wmiSearcher.PropertiesToLoad.AddRange(@("msWMI-Name", "msWMI-ID", "name"))
+            $wmiResults = $wmiSearcher.FindAll()
+
+            $wmiTotalCount = $wmiResults.Count
+
+            foreach ($w in $wmiResults) {
+                $fName = Get-LdapProp $w "mswmi-name"
+                if ([string]::IsNullOrWhiteSpace($fName)) { $fName = "Unbenannter Filter" }
+                $fName = $fName.Trim()
+
+                $rawId = Get-LdapProp $w "mswmi-id"
+                if ([string]::IsNullOrWhiteSpace($rawId)) { $rawId = Get-LdapProp $w "name" }
+
+                $cleanId = if ($rawId -match '(?i)([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})') {
+                    $matches[1].ToUpper()
+                } else {
+                    $rawId.Trim('{','}').ToUpper()
+                }
+
+                $linkedGpos = [System.Collections.Generic.List[string]]::new()
+                if (-not [string]::IsNullOrWhiteSpace($cleanId) -and $wmiUsageByGuid.ContainsKey($cleanId)) {
+                    foreach ($gp in $wmiUsageByGuid[$cleanId]) { if (-not $linkedGpos.Contains($gp)) { $linkedGpos.Add($gp) } }
+                }
+                $kName = $fName.ToLower()
+                if (-not [string]::IsNullOrWhiteSpace($kName) -and $wmiUsageByName.ContainsKey($kName)) {
+                    foreach ($gp in $wmiUsageByName[$kName]) { if (-not $linkedGpos.Contains($gp)) { $linkedGpos.Add($gp) } }
+                }
+
+                $gpoCount = $linkedGpos.Count
+                $statusText = if ($gpoCount -gt 0) { "Verknuepft" } else { "Ungenutzt (Verwaist)" }
+                $gpoListStr = if ($gpoCount -gt 0) { ($linkedGpos | Sort-Object) -join ", " } else { "-- keine Zuordnung --" }
+
+                if ($gpoCount -eq 0) {
+                    $wmiUnusedCount++
+                    $unusedWmiNames.Add($fName)
+                }
+
+                $wmiStatusList.Add([PSCustomObject]@{
+                    "Filter-Name"      = $fName
+                    "Status"           = $statusText
+                    "GPO-Anzahl"       = $gpoCount
+                    "Verknuepfte GPOs" = $gpoListStr
+                })
+            }
+
+            # 4. Kacheln befuellen
+            $script:lblKpiGpoTotal.Text = [string]$totalGpos
+            $script:lblKpiGpoLinked.Text = [string]$linkedGposCount
+
+            $script:lblKpiGpoUnlinked.Text = [string]$unlinkedGposCount
+            if ($unlinkedGposCount -gt 0) {
+                $script:lblKpiGpoUnlinked.ForeColor = [System.Drawing.Color]::FromArgb(215, 85, 0)
+                $script:panelKpiGpoUnlinked.BackColor = [System.Drawing.Color]::FromArgb(255, 250, 240)
+            } else {
+                $script:lblKpiGpoUnlinked.ForeColor = [System.Drawing.Color]::DarkGreen
+                $script:panelKpiGpoUnlinked.BackColor = [System.Drawing.Color]::White
+            }
+
+            $script:lblKpiGpoDisabled.Text = [string]$disabledGposCount
+            if ($disabledGposCount -gt 0) {
+                $script:lblKpiGpoDisabled.ForeColor = [System.Drawing.Color]::FromArgb(190, 40, 40)
+                $script:panelKpiGpoDisabled.BackColor = [System.Drawing.Color]::FromArgb(255, 242, 242)
+            } else {
+                $script:lblKpiGpoDisabled.ForeColor = [System.Drawing.Color]::DarkGreen
+                $script:panelKpiGpoDisabled.BackColor = [System.Drawing.Color]::White
+            }
+
+            $script:lblKpiWmiTotal.Text = [string]$wmiTotalCount
+            $script:lblKpiWmiUnused.Text = [string]$wmiUnusedCount
+            if ($wmiUnusedCount -gt 0) {
+                $script:lblKpiWmiUnused.ForeColor = [System.Drawing.Color]::FromArgb(215, 85, 0)
+                $script:panelKpiWmiUnused.BackColor = [System.Drawing.Color]::FromArgb(255, 250, 240)
+            } else {
+                $script:lblKpiWmiUnused.ForeColor = [System.Drawing.Color]::DarkGreen
+                $script:panelKpiWmiUnused.BackColor = [System.Drawing.Color]::White
+            }
+
+            # -------------------------------------------------------------
+            # 5. Die 4 Kern-Systempruefungen (Handlungsempfehlungen)
+            # -------------------------------------------------------------
+            $coreChecks = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+            # CHECK 1: Verwaiste (nicht verknuepfte) GPOs
+            if ($unlinkedGposCount -eq 0) {
+                $coreChecks.Add([PSCustomObject]@{
+                    "Prüfung"             = "1. Verknüpfungs-Status"
+                    "Status"              = "OK"
+                    "Feststellung"        = "Alle GPOs sind an OUs oder der Domäne verknüpft."
+                    "Handlungsempfehlung" = "Keine Maßnahmen erforderlich."
+                })
+            } else {
+                $sampleList = ($unlinkedGpoNames | Select-Object -First 3) -join ", "
+                if ($unlinkedGpoNames.Count -gt 3) { $sampleList += " ..." }
+                $coreChecks.Add([PSCustomObject]@{
+                    "Prüfung"             = "1. Verknüpfungs-Status"
+                    "Status"              = "Warnung"
+                    "Feststellung"        = "$unlinkedGposCount GPO(s) ohne Verknüpfung gefunden ($sampleList)."
+                    "Handlungsempfehlung" = "Prüfen, ob Richtlinien noch benötigt werden; verwaiste GPOs bereinigen."
+                })
+            }
+
+            # CHECK 2: Deaktivierte GPOs
+            if ($disabledGposCount -eq 0) {
+                $coreChecks.Add([PSCustomObject]@{
+                    "Prüfung"             = "2. Deaktivierte GPOs"
+                    "Status"              = "OK"
+                    "Feststellung"        = "Keine vollständig deaktivierten GPOs vorhanden."
+                    "Handlungsempfehlung" = "Keine Maßnahmen erforderlich."
+                })
+            } else {
+                $sampleList = ($disabledGpoNames | Select-Object -First 3) -join ", "
+                if ($disabledGpoNames.Count -gt 3) { $sampleList += " ..." }
+                $coreChecks.Add([PSCustomObject]@{
+                    "Prüfung"             = "2. Deaktivierte GPOs"
+                    "Status"              = "Warnung"
+                    "Feststellung"        = "$disabledGposCount GPO(s) sind komplett deaktiviert ($sampleList)."
+                    "Handlungsempfehlung" = "Reaktivieren oder bereinigen, um Verarbeitungszeiten zu optimieren."
+                })
+            }
+
+            # CHECK 3: Sicherung & Konsistenz
+            $coreChecks.Add([PSCustomObject]@{
+                "Prüfung"             = "3. Sicherungs-Status"
+                "Status"              = "OK"
+                "Feststellung"        = "Aktueller Domänenbestand eingelesen ($totalGpos GPOs aktiv im AD)."
+                "Handlungsempfehlung" = "Regelmäßige GPO-Backups in Tab '3. GPO Backup' durchführen."
+            })
+
+            # CHECK 4: WMI-Filter Verwendungsprüfung (Gruen wenn alle genutzt, Orange wenn ungenutzt)
+            if ($wmiTotalCount -eq 0) {
+                $coreChecks.Add([PSCustomObject]@{
+                    "Prüfung"             = "4. WMI-Filter Status"
+                    "Status"              = "OK"
+                    "Feststellung"        = "Keine WMI-Filter in der Domäne konfiguriert."
+                    "Handlungsempfehlung" = "Keine Maßnahmen erforderlich."
+                })
+            } elseif ($wmiUnusedCount -eq 0) {
+                $coreChecks.Add([PSCustomObject]@{
+                    "Prüfung"             = "4. WMI-Filter Status"
+                    "Status"              = "OK"
+                    "Feststellung"        = "Alle WMI-Filter ($wmiTotalCount/$wmiTotalCount) sind Richtlinien zugewiesen."
+                    "Handlungsempfehlung" = "Optimal. Keine verwaisten WMI-Filter vorhanden."
+                })
+            } else {
+                $sampleWmi = ($unusedWmiNames | Select-Object -First 3) -join ", "
+                if ($unusedWmiNames.Count -gt 3) { $sampleWmi += " ..." }
+                $coreChecks.Add([PSCustomObject]@{
+                    "Prüfung"             = "4. WMI-Filter Status"
+                    "Status"              = "Warnung"
+                    "Feststellung"        = "$wmiUnusedCount von $wmiTotalCount WMI-Filter(n) sind nicht zugewiesen ($sampleWmi)."
+                    "Handlungsempfehlung" = "In Tab '5. WMI Filter Analyse' prüfen und nicht benötigte Filter löschen."
+                })
+            }
+
+            # 6. Grids zuweisen
+            $arrAudit = [System.Collections.ArrayList]::new()
+            foreach ($item in $coreChecks) { [void]$arrAudit.Add($item) }
+            $script:gridDashboardAudit.DataSource = $arrAudit
+
+            if ($script:gridDashboardAudit.Columns["Prüfung"])             { $script:gridDashboardAudit.Columns["Prüfung"].FillWeight = 25 }
+            if ($script:gridDashboardAudit.Columns["Status"])              { $script:gridDashboardAudit.Columns["Status"].FillWeight = 15 }
+            if ($script:gridDashboardAudit.Columns["Feststellung"])        { $script:gridDashboardAudit.Columns["Feststellung"].FillWeight = 45 }
+            if ($script:gridDashboardAudit.Columns["Handlungsempfehlung"]) { $script:gridDashboardAudit.Columns["Handlungsempfehlung"].FillWeight = 45 }
+
+            $arrWmi = [System.Collections.ArrayList]::new()
+            foreach ($wItem in ($wmiStatusList | Sort-Object "GPO-Anzahl", "Filter-Name")) { [void]$arrWmi.Add($wItem) }
+            $script:gridDashboardWmi.DataSource = $arrWmi
+
+            if ($script:gridDashboardWmi.Columns["Filter-Name"])      { $script:gridDashboardWmi.Columns["Filter-Name"].FillWeight = 30 }
+            if ($script:gridDashboardWmi.Columns["Status"])           { $script:gridDashboardWmi.Columns["Status"].FillWeight = 25 }
+            if ($script:gridDashboardWmi.Columns["GPO-Anzahl"])       { $script:gridDashboardWmi.Columns["GPO-Anzahl"].FillWeight = 15 }
+            if ($script:gridDashboardWmi.Columns["Verknuepfte GPOs"]) { $script:gridDashboardWmi.Columns["Verknuepfte GPOs"].FillWeight = 50 }
+
+            $timeStr = (Get-Date).ToString("HH:mm:ss")
+            $script:lblDashboardStatus.Text = "Analyse aktualisiert um $timeStr Uhr | 4 Prüfungen abgeschlossen."
+            if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Dashboard-Analyse erfolgreich abgeschlossen." }
+        } catch {
+            if ($script:lblDashboardStatus) { $script:lblDashboardStatus.Text = "Fehler: $($_.Exception.Message)" }
+            if ($script:lblProgressInfo)    { $script:lblProgressInfo.Text = "Fehler bei Dashboard-Analyse: $($_.Exception.Message)" }
+        } finally {
+            if ($wmiSearcher) { $wmiSearcher.Dispose() }
+            if ($wmiRoot)     { $wmiRoot.Dispose() }
+            if ($gpoSearcher) { $gpoSearcher.Dispose() }
+            if ($gpoRoot)     { $gpoRoot.Dispose() }
+            if ($somSearcher) { $somSearcher.Dispose() }
+            if ($somRoot)     { $somRoot.Dispose() }
+
+            if ($script:pbarGlobal) { $script:pbarGlobal.Visible = $false }
+            $form.Cursor = [System.Windows.Forms.Cursors]::Default
         }
-    })
+    }
 
-    $btnSwitchToBackup.Add_Click({
-        if ($script:comboBackupFilter) { $script:comboBackupFilter.SelectedItem = "Nicht verlinkte GPOs (Unlinked)" }
-        $tabControl.SelectedTab = $script:tabBackup
-    })
-
-    $btnExportUnlinkedCsv.Add_Click({
-        $unlinkedItems = @($script:rawOverviewList | Where-Object { $_."Verlinkt" -eq "Nein" })
-        if ($unlinkedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Keine ungelinkten GPOs vorhanden.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
-            return
+    $btnRefreshDashboard.Add_Click({
+        if ($script:Invoke_LoadDashboard -is [scriptblock]) {
+            & $script:Invoke_LoadDashboard
         }
-
-        $targetBase = if ($script:txtBackupTargetDir) { $script:txtBackupTargetDir.Text.Trim() } else { "C:\Install\Backup\GPO" }
-        if (-not (Test-Path $targetBase)) { New-Item -ItemType Directory -Path $targetBase -Force | Out-Null }
-        $csvFile = Join-Path $targetBase "GPO_Unlinked_Dashboard_$((Get-Date).ToString('yyyyMMdd_HHmm')).csv"
-        $unlinkedItems | Export-Csv -Path $csvFile -Delimiter ";" -NoTypeInformation -Encoding UTF8
-        [System.Windows.Forms.MessageBox]::Show("Exportiert nach: $csvFile", "Export fertig", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
     })
 }
