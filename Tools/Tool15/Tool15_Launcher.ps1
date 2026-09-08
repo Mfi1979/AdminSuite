@@ -1,153 +1,216 @@
-<#
-==================================================================================
- Tool 15: Active Directory GPO Enterprise Suite (Modular Launcher)
- Version: 1.8.8
-==================================================================================
-#>
+# =========================================================================
+# Tool15_Launcher.ps1 - Active Directory GPO Enterprise Suite
+# =========================================================================
 
-$modulePath = Join-Path $PSScriptRoot "Modules"
-. (Join-Path $modulePath "Common.ps1")
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 
-# --- Domaenenpruefung ---
-try {
-    $domainInfo = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
-    $rootDse = [ADSI]"LDAP://RootDSE"
-    $domainDN = $rootDse.defaultNamingContext.Value
-    $domainName = $domainInfo.Name
-    $rootDse.Dispose()
-} catch {
-    [System.Windows.Forms.MessageBox]::Show(
-        "Active Directory Domaene nicht erreichbar oder Computer nicht domaenengebunden.",
-        "Fehler",
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Error
-    )
-    return
+# -------------------------------------------------------------------------
+# 1. Pfad-Erkennung & GitHub-Konfiguration
+# -------------------------------------------------------------------------
+$gitHubBaseUrl = "https://raw.githubusercontent.com/Mfi1979/AdminSuite/main/Tools/Tool15"
+
+$isWebExecution = [string]::IsNullOrWhiteSpace($PSScriptRoot) -and [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)
+
+if ($isWebExecution) {
+    $localTempBase = Join-Path $env:TEMP "Tool15_GPO_Suite"
+    $modulePath    = Join-Path $localTempBase "Modules"
+    if (-not (Test-Path $modulePath)) {
+        New-Item -ItemType Directory -Path $modulePath -Force | Out-Null
+    }
+} else {
+    $scriptDir  = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    $modulePath = Join-Path $scriptDir "Modules"
+    if (-not (Test-Path $modulePath)) {
+        New-Item -ItemType Directory -Path $modulePath -Force | Out-Null
+    }
 }
 
-$script:isClosing = $false
+# -------------------------------------------------------------------------
+# 2. Module herunterladen (falls n√∂tig) & direkt im Skript-Scope dot-sourcen
+# -------------------------------------------------------------------------
+$moduleList = @(
+    "common.ps1",
+    "GpoParser.ps1",
+    "Tab0_Dashboard.ps1",
+    "Tab1_Overview.ps1",
+    "Tab2_Settings.ps1",
+    "Tab3_Backup.ps1",
+    "Tab4_Compare.ps1",
+    "Tab5_WMIFilter.ps1"
+)
 
-# --- Hauptfenster & UI-Container initialisieren ---
+foreach ($mod in $moduleList) {
+    $targetFile = Join-Path $modulePath $mod
+
+    # Wenn Datei lokal fehlt oder via Web/iex gestartet wurde -> von GitHub holen
+    if ($isWebExecution -or (-not (Test-Path $targetFile))) {
+        $rawUrl = "$gitHubBaseUrl/Modules/$mod"
+        try {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+            Invoke-RestMethod -Uri $rawUrl -OutFile $targetFile -ErrorAction Stop
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("Fehler beim Herunterladen von '$mod':`r`n$($_.Exception.Message)", "Download-Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+            continue
+        }
+    }
+
+    if (Test-Path $targetFile) {
+        . $targetFile
+    } else {
+        [System.Windows.Forms.MessageBox]::Show("Modul '$mod' fehlt unter '$targetFile'.", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    }
+}
+
+# -------------------------------------------------------------------------
+# 3. Globale Caches initialisieren
+# -------------------------------------------------------------------------
+$script:isClosing         = $false
+$script:rawOverviewList   = [System.Collections.Generic.List[PSCustomObject]]::new()
+$script:rawSettingsList   = [System.Collections.Generic.List[PSCustomObject]]::new()
+$script:rawBackupList     = [System.Collections.Generic.List[PSCustomObject]]::new()
+$script:rawCompareList    = [System.Collections.Generic.List[PSCustomObject]]::new()
+$script:rawWmiList        = [System.Collections.Generic.List[PSCustomObject]]::new()
+$script:gpoLinksCache     = @{}
+$script:allGposCache      = @()
+
+# -------------------------------------------------------------------------
+# 4. Dom√§ne ermitteln
+# -------------------------------------------------------------------------
+$domainName = ""
+$domainDN   = ""
+
+try {
+    $curDomain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
+    $domainName = $curDomain.Name
+    $domainDN   = ($curDomain.Name.Split('.') | ForEach-Object { "DC=$_" }) -join ','
+} catch {
+    try {
+        $rootDSE = [ADSI]"LDAP://RootDSE"
+        $domainDN = "$($rootDSE.defaultNamingContext)"
+        $domainName = ($domainDN -replace 'DC=','' -replace ',','.')
+    } catch {
+        $domainName = "Lokal / Unbekannt"
+        $domainDN = ""
+    }
+}
+
+# -------------------------------------------------------------------------
+# 5. Grid-Sortierung Hilfsfunktion
+# -------------------------------------------------------------------------
+function Enable-GridSorting {
+    param([System.Windows.Forms.DataGridView]$Grid)
+
+    $Grid.Add_ColumnHeaderMouseClick({
+        param($sender, $e)
+        $column = $sender.Columns[$e.ColumnIndex]
+        $propName = $column.DataPropertyName
+        if ([string]::IsNullOrWhiteSpace($propName)) { return }
+
+        $dataSource = $sender.DataSource
+        if ($null -eq $dataSource) { return }
+
+        $direction = [System.ComponentModel.ListSortDirection]::Ascending
+        if ($column.HeaderCell.SortGlyphDirection -eq [System.Windows.Forms.SortOrder]::Ascending) {
+            $direction = [System.ComponentModel.ListSortDirection]::Descending
+        }
+
+        $list = [System.Collections.ArrayList]::new()
+        $sorted = if ($direction -eq [System.ComponentModel.ListSortDirection]::Ascending) {
+            $dataSource | Sort-Object -Property @{ Expression = { $_.$propName } }
+        } else {
+            $dataSource | Sort-Object -Property @{ Expression = { $_.$propName } } -Descending
+        }
+
+        foreach ($item in $sorted) { [void]$list.Add($item) }
+        $sender.DataSource = $list
+
+        foreach ($col in $sender.Columns) {
+            $col.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
+        }
+        $column.HeaderCell.SortGlyphDirection = if ($direction -eq [System.ComponentModel.ListSortDirection]::Ascending) {
+            [System.Windows.Forms.SortOrder]::Ascending
+        } else {
+            [System.Windows.Forms.SortOrder]::Descending
+        }
+    })
+}
+
+# -------------------------------------------------------------------------
+# 6. Hauptfenster initialisieren
+# -------------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - $script:ToolVersion"
-$form.Size = New-Object System.Drawing.Size(1680, 960)
-$form.StartPosition = "CenterScreen"
-$form.MinimumSize = New-Object System.Drawing.Size(1250, 750)
-$form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - v1.9.4"
+$form.Size = New-Object System.Drawing.Size(1280, 800)
+$form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+$form.MinimumSize = New-Object System.Drawing.Size(1024, 650)
+$form.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
+$form.BackColor = [System.Drawing.Color]::FromArgb(246, 248, 252)
 
-# --- Statusleiste unten ---
-$panelBottomStatus = New-Object System.Windows.Forms.Panel
-$panelBottomStatus.Dock = [System.Windows.Forms.DockStyle]::Bottom
-$panelBottomStatus.Height = 32
-$panelBottomStatus.BackColor = [System.Drawing.Color]::FromArgb(240, 242, 246)
-$panelBottomStatus.Padding = New-Object System.Windows.Forms.Padding(10, 4, 10, 4)
+# Statuszeile
+$statusStrip = New-Object System.Windows.Forms.StatusStrip
+$statusStrip.Height = 28
+$statusStrip.BackColor = [System.Drawing.Color]::FromArgb(238, 242, 248)
 
-$lblProgressInfo = New-Object System.Windows.Forms.Label
-$lblProgressInfo.Dock = [System.Windows.Forms.DockStyle]::Fill
-$lblProgressInfo.Text = "Bereit."
-$lblProgressInfo.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-$lblProgressInfo.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-$script:lblProgressInfo = $lblProgressInfo
+$script:lblProgressInfo = New-Object System.Windows.Forms.ToolStripStatusLabel
+$script:lblProgressInfo.Text = "Bereit."
+$script:lblProgressInfo.Spring = $true
+$script:lblProgressInfo.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 
-$pbarGlobal = New-Object System.Windows.Forms.ProgressBar
-$pbarGlobal.Dock = [System.Windows.Forms.DockStyle]::Right
-$pbarGlobal.Width = 360
-$pbarGlobal.Visible = $false
-$script:pbarGlobal = $pbarGlobal
+$script:pbarGlobal = New-Object System.Windows.Forms.ToolStripProgressBar
+$script:pbarGlobal.Size = New-Object System.Drawing.Size(200, 18)
+$script:pbarGlobal.Visible = $false
 
-$panelBottomStatus.Controls.Add($lblProgressInfo)
-$panelBottomStatus.Controls.Add($pbarGlobal)
+[void]$statusStrip.Items.Add($script:lblProgressInfo)
+[void]$statusStrip.Items.Add($script:pbarGlobal)
+$form.Controls.Add($statusStrip)
 
-# --- TabControl ---
+# TabControl
 $tabControl = New-Object System.Windows.Forms.TabControl
 $tabControl.Dock = [System.Windows.Forms.DockStyle]::Fill
-$tabControl.Font = New-Object System.Drawing.Font("Segoe UI", 10.5, [System.Drawing.FontStyle]::Bold)
-$tabControl.Padding = New-Object System.Drawing.Point(14, 6)
-
+$tabControl.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 $form.Controls.Add($tabControl)
-$form.Controls.Add($panelBottomStatus)
-$panelBottomStatus.SendToBack()
-$tabControl.BringToFront()
 
-# Lokale Datencontainer
-$script:rawOverviewList = [System.Collections.Generic.List[PSCustomObject]]::new()
-$script:rawBackupList   = [System.Collections.Generic.List[PSCustomObject]]::new()
-$script:gpoLinksCache   = @{}
-$script:allGposCache    = [System.Collections.Generic.List[Microsoft.GroupPolicy.Gpo]]::new()
-$script:rawSettingsList = [System.Collections.Generic.List[PSCustomObject]]::new()
-$script:rawCompareList  = [System.Collections.Generic.List[PSCustomObject]]::new()
-$script:dashDetailCache = @{}
-
-# Module laden
-. (Join-Path $modulePath "GpoParser.ps1")
-. (Join-Path $modulePath "Tab0_Dashboard.ps1")
-. (Join-Path $modulePath "Tab1_Overview.ps1")
-. (Join-Path $modulePath "Tab2_Settings.ps1")
-. (Join-Path $modulePath "Tab3_Backup.ps1")
-. (Join-Path $modulePath "Tab4_Compare.ps1")
-. (Join-Path $modulePath "Tab5_WmiFilter.ps1")
-
-# Tabs assemblieren
-Build-Tab0_Dashboard -tabControl $tabControl
-Build-Tab1_Overview -tabControl $tabControl -domainDN $domainDN -domainName $domainName
-Build-Tab2_Settings -tabControl $tabControl
-Build-Tab3_Backup -tabControl $tabControl
-Build-Tab4_Compare -tabControl $tabControl
+# -------------------------------------------------------------------------
+# 7. UI-Tabs aufbauen
+# -------------------------------------------------------------------------
+Build-Tab0_Dashboard -tabControl $tabControl -domainDN $domainDN -domainName $domainName
+Build-Tab1_Overview  -tabControl $tabControl -domainDN $domainDN -domainName $domainName
+Build-Tab2_Settings  -tabControl $tabControl -domainDN $domainDN -domainName $domainName
+Build-Tab3_Backup    -tabControl $tabControl -domainDN $domainDN -domainName $domainName
+Build-Tab4_Compare   -tabControl $tabControl
 Build-Tab5_WmiFilter -tabControl $tabControl -domainDN $domainDN -domainName $domainName
 
-# Initialer Startablauf
-$form.Add_Shown({
-    $script:allGposCache.Clear()
-    $gpos = Get-GPO -All | Sort-Object DisplayName
-    foreach ($g in $gpos) { [void]$script:allGposCache.Add($g) }
+# -------------------------------------------------------------------------
+# 8. Dashboard initial laden
+# -------------------------------------------------------------------------
+if ($script:Invoke_LoadDashboard -is [scriptblock]) {
+    & $script:Invoke_LoadDashboard
+}
 
-    # Tab 4 Dropdowns befuellen
-    $script:comboCompareGpo1.Items.Clear()
-    $script:comboCompareGpo2.Items.Clear()
-    foreach ($g in $script:allGposCache) {
-        [void]$script:comboCompareGpo1.Items.Add($g.DisplayName)
-        [void]$script:comboCompareGpo2.Items.Add($g.DisplayName)
-    }
-    [void]$script:comboCompareGpo1.Items.Add($script:DdpBaselineName)
-    [void]$script:comboCompareGpo2.Items.Add($script:DdpBaselineName)
-
-    if ($script:comboCompareGpo1.Items.Count -gt 0) { $script:comboCompareGpo1.SelectedIndex = 0 }
-    if ($script:comboCompareGpo2.Items.Count -gt 1) { $script:comboCompareGpo2.SelectedIndex = 1 }
-
-    & $script:Invoke_LoadOverview
-    & $script:Invoke_UpdateDashboard
-    & $script:Update_SettingsGpoDropdown
-    & $script:Invoke_LoadSettings
-    & $script:Invoke_LoadGpos
-    if ($script:Invoke_LoadWmiFilters) { & $script:Invoke_LoadWmiFilters }
-})
-
-$form.Add_FormClosing({ $script:isClosing = $true })
-
-# 1. Event VOR dem Anzeigen registrieren (verhindert Hintergrund-Aufrufe beim Schlieﬂen)
+# -------------------------------------------------------------------------
+# 9. Schliess- & Bereinigungslogik
+# -------------------------------------------------------------------------
 $form.Add_FormClosing({
     param($sender, $e)
     $script:isClosing = $true
 })
 
-# 2. Fenster anzeigen und im finally-Block restlos bereinigen
 try {
     [void]$form.ShowDialog()
 }
 finally {
-    # Formular & Steuerelemente entsorgen
     if ($form -and -not $form.IsDisposed) {
         $form.Dispose()
     }
 
-    # Interne Caches leeren, um Referenzen im ISE-Speicher zu kappen
     if ($script:rawOverviewList) { $script:rawOverviewList.Clear() }
     if ($script:rawSettingsList) { $script:rawSettingsList.Clear() }
     if ($script:rawBackupList)   { $script:rawBackupList.Clear() }
     if ($script:rawCompareList)  { $script:rawCompareList.Clear() }
+    if ($script:rawWmiList)      { $script:rawWmiList.Clear() }
     if ($script:gpoLinksCache)   { $script:gpoLinksCache.Clear() }
 
-    # Garbage Collection anstoﬂen, um offene LDAP-/COM-Handles sofort freizugeben
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
 }
