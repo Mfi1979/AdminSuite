@@ -282,7 +282,7 @@ function Show-ADObjectCompareTool {
     # ZEILE 4: Legende
     # -------------------------------------------------------------
     $lblLegend = New-Object System.Windows.Forms.Label
-    $lblLegend.Text = "💡 Klick auf Spaltenkopf sortiert die Tabelle | Legende: [Grün] Identisch | [Gelb/Orange] Abweichend | [Rot] Nur Objekt 1 | [Blau] Nur Objekt 2"
+    $lblLegend.Text = "💡 Klick auf Spaltenkopf sortiert die Tabelle | Rechtsklick auf Zeile wählt Objekt für Vergleich | Legende: [Grün] Identisch | [Gelb/Orange] Abweichend"
     $lblLegend.AutoSize = $true
     $lblLegend.ForeColor = [System.Drawing.Color]::FromArgb(100, 110, 120)
     $lblLegend.Font = New-Object System.Drawing.Font("Segoe UI", 8.5)
@@ -317,9 +317,88 @@ function Show-ADObjectCompareTool {
     $grid.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(210, 230, 250)
     $grid.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::Black
 
+    # -------------------------------------------------------------
+    # RECHTSKLICK-KONTEXTMENÜ (Objekt 1 / Objekt 2 zuweisen)
+    # -------------------------------------------------------------
+    $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
+
+    $menuItemSetLeft = New-Object System.Windows.Forms.ToolStripMenuItem
+    $menuItemSetLeft.Text = "👉 Als Basis-Objekt 1 setzen (Links)"
+    $contextMenu.Items.Add($menuItemSetLeft) | Out-Null
+
+    $menuItemSetRight = New-Object System.Windows.Forms.ToolStripMenuItem
+    $menuItemSetRight.Text = "👉 Als Vergleichs-Objekt 2 setzen (Rechts)"
+    $contextMenu.Items.Add($menuItemSetRight) | Out-Null
+
+    $grid.ContextMenuStrip = $contextMenu
+
+    # Rechtsklick selektiert direkt die Zeile unter dem Mauszeiger
+    $grid.Add_CellMouseDown({
+        param($sender, $e)
+        if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Right -and $e.RowIndex -ge 0) {
+            $grid.ClearSelection()
+            $grid.Rows[$e.RowIndex].Selected = $true
+        }
+    })
+
+    # Helferfunktion: DisplayName des aktuell markierten Objekts ermitteln
+    function Get-SelectedObjectDisplayName {
+        if ($grid.SelectedRows.Count -eq 0) { return $null }
+        $row = $grid.SelectedRows[0]
+
+        # 1. Übersichtsmodus: Spalte "DisplayName"
+        if ($row.Cells["DisplayName"] -and $row.Cells["DisplayName"].Value) {
+            return [string]$row.Cells["DisplayName"].Value
+        }
+        # 2. Vergleichsmodus: Fallback auf Name/SAM
+        if ($row.Cells["Name"] -and $row.Cells["Name"].Value) {
+            $n = [string]$row.Cells["Name"].Value
+            $s = if ($row.Cells["SAM"]) { [string]$row.Cells["SAM"].Value } else { "" }
+            return if ($s) { "$n ($s)" } else { $n }
+        }
+        return $null
+    }
+
+    # Menü-Aktion: Links setzen
+    $menuItemSetLeft.Add_Click({
+        $objName = Get-SelectedObjectDisplayName
+        if (-not $objName) { return }
+
+        $foundIdx = $cmbObj1.FindStringExact($objName)
+        if ($foundIdx -ge 0) {
+            $cmbObj1.SelectedIndex = $foundIdx
+        } else {
+            # Bei Teilübereinstimmung
+            for ($i = 0; $i -lt $cmbObj1.Items.Count; $i++) {
+                if ($cmbObj1.Items[$i].ToString() -like "*$objName*") {
+                    $cmbObj1.SelectedIndex = $i
+                    break
+                }
+            }
+        }
+    })
+
+    # Menü-Aktion: Rechts setzen
+    $menuItemSetRight.Add_Click({
+        $objName = Get-SelectedObjectDisplayName
+        if (-not $objName) { return }
+
+        $foundIdx = $cmbObj2.FindStringExact($objName)
+        if ($foundIdx -ge 0) {
+            $cmbObj2.SelectedIndex = $foundIdx
+        } else {
+            for ($i = 0; $i -lt $cmbObj2.Items.Count; $i++) {
+                if ($cmbObj2.Items[$i].ToString() -like "*$objName*") {
+                    $cmbObj2.SelectedIndex = $i
+                    break
+                }
+            }
+        }
+    })
+
     $form.Controls.Add($grid)
     $grid.BringToFront()
-    $pnlTop.SendToBack()[cite: 3]
+    $pnlTop.SendToBack()
 
     # -------------------------------------------------------------
     # LOGIK & DATEN
@@ -443,20 +522,18 @@ function Show-ADObjectCompareTool {
     $loadObjectsAction = {
         $type = $cmbType.SelectedItem.ToString()
 
-        # Wildcard-Muster nach Match-Modus aufbauen
         $rawTerm = $txtObjFilter.Text.Trim()
         $termClean = $rawTerm.Trim('*')
 
         $pattern = "*"
         if ($termClean) {
             switch ($cmbMatchMode.SelectedIndex) {
-                0 { $pattern = "*$termClean*" } # Enthält
-                1 { $pattern = "$termClean*" }  # Beginnt mit
-                2 { $pattern = "*$termClean" }  # Endet mit
+                0 { $pattern = "*$termClean*" }
+                1 { $pattern = "$termClean*" }
+                2 { $pattern = "*$termClean" }
             }
         }
 
-        # Vollständiger, syntaktisch exakter LDAP-Filter
         $finalFilter = if ($pattern -eq "*") {
             switch -Wildcard ($type) {
                 "User*"     { "(&(objectCategory=person)(objectClass=user))" }
@@ -503,7 +580,6 @@ function Show-ADObjectCompareTool {
 
             & $updateDropdowns
 
-            # Tabelle im Übersichtsmodus sofort befüllen und anzeigen
             if ($script:ViewMode -eq "Overview" -or $script:CurrentDisplayList.Count -eq 0) {
                 $script:ViewMode = "Overview"
                 $script:CurrentDisplayList.Clear()
