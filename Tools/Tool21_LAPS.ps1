@@ -1,4 +1,4 @@
-﻿<#
+<#
 ================================================================================
  TOOL 21: LAPS VERSION & STATUS AUDIT (COMPUTERS & SERVERS)
  Version: v1.3.3 (Direktabfrage am Schema-Master zur Umgehung von Replikations-Lags)
