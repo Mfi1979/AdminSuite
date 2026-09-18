@@ -378,13 +378,20 @@ $btnConnect.Add_Click({
         for ($dev = 0; $dev -lt$totalDevices; $dev++) {$osName = $allDevices[$dev].OperatingSystem;
             if ([string]::IsNullOrWhiteSpace($osName)) {$osName = "Unbekannt / Sonstige"; }
             if ($osHash.ContainsKey($osName)) {
-                $osHash[$osName]++;
+				$osHash[$osName]++
             } else {
-                $osHash[$osName] = 1;             }         }$deviceSummary = @();
-        foreach ($k in$osHash.Keys) {
-            $deviceSummary += [PSCustomObject]@{ "Betriebssystem / Kategorie" = $k; "Anzahl Geraete" = $osHash[$k] };
+                $osHash[$osName] = 1
+            }
         }
-
+        $deviceSummary = @()
+        $osKeys = @($osHash.Keys)
+        for ($kIdx = 0; $kIdx -lt $osKeys.Count; $kIdx++) {
+            $keyName = [string]$osKeys[$kIdx]
+            $deviceSummary += [PSCustomObject]@{ 
+                "Betriebssystem / Kategorie" = $keyName
+                "Anzahl Geraete"             = $osHash[$keyName] 
+            }
+        }	
         # UI Register 0
         $Tab0.Controls.Clear();$pnlKpi = New-Object System.Windows.Forms.Panel;
         $pnlKpi.Dock = "Top";
