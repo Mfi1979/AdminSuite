@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Tool27_M365Audit.ps1 - M365 Multi-Tenant Migration & Inventory Dashboard
+    27_M365Audit.ps1 - M365 Multi-Tenant Migration & Inventory Dashboard
     Reiter: 
       - Voraussetzungen & Module (Prüfung & Installation)
       - Mandanten-Dashboard (KPIs & Geräte)
@@ -24,7 +24,7 @@ $colBg       = [System.Drawing.Color]::FromArgb(241, 245, 249);$colCardBg   = [S
 $colTextDark = [System.Drawing.Color]::FromArgb(30, 41, 59);$colMuted    = [System.Drawing.Color]::FromArgb(100, 116, 139);
 
 $Form = New-Object System.Windows.Forms.Form;
-$Form.Text = "Tool27: M365 Tenant Analyzer & Inventory Dashboard";
+$Form.Text = "M365 Tenant Analyzer & Inventory Dashboard";
 $Form.Size = New-Object System.Drawing.Size(1200, 880);
 $Form.MinimumSize = New-Object System.Drawing.Size(1050, 750);$Form.StartPosition = "CenterScreen";
 $Form.BackColor =$colBg;
@@ -178,6 +178,7 @@ function Build-StyledGrid {
 }
 
 function Set-GridData($container,$dataSource) {
+    if ($null -eq$container) { return }
     $container.Controls.Clear();$grid = Build-StyledGrid;
     $table = New-Object System.Data.DataTable;
 
@@ -378,20 +379,17 @@ $btnConnect.Add_Click({
         for ($dev = 0; $dev -lt$totalDevices; $dev++) {$osName = $allDevices[$dev].OperatingSystem;
             if ([string]::IsNullOrWhiteSpace($osName)) {$osName = "Unbekannt / Sonstige"; }
             if ($osHash.ContainsKey($osName)) {
-				$osHash[$osName]++
+                $osHash[$osName]++;
             } else {
-                $osHash[$osName] = 1
-            }
-        }
-        $deviceSummary = @()
-        $osKeys = @($osHash.Keys)
+                $osHash[$osName] = 1;             }         }$deviceSummary = @();
+        $osKeys = @($osHash.Keys);
         for ($kIdx = 0; $kIdx -lt $osKeys.Count; $kIdx++) {
-            $keyName = [string]$osKeys[$kIdx]
-            $deviceSummary += [PSCustomObject]@{ 
-                "Betriebssystem / Kategorie" = $keyName
-                "Anzahl Geraete"             = $osHash[$keyName] 
-            }
-        }	
+            $keyName = [string]$osKeys[$kIdx];$deviceSummary += [PSCustomObject]@{ 
+                "Betriebssystem / Kategorie" = $keyName;
+                "Anzahl Geraete"             = $osHash[$keyName];
+            };
+        }
+
         # UI Register 0
         $Tab0.Controls.Clear();$pnlKpi = New-Object System.Windows.Forms.Panel;
         $pnlKpi.Dock = "Top";
@@ -522,8 +520,10 @@ $btnExport.Add_Click({$fbd = New-Object System.Windows.Forms.FolderBrowserDialog
 });
 
 # Initiale Pruefung beim Start
-Refresh-ModuleCheck;
+if ($null -ne$pnlModuleGrid) {
+    Refresh-ModuleCheck;
+}
 Write-GuiLog "M365 Analyzer bereit. Tragen Sie oben die Admin-UPN ein und klicken Sie auf 'Verbinden & Laden'.";
 
 [void]$Form.ShowDialog();$Form.Dispose();
-# --- ENDE TOOL27 ---
+# --- ENDE 27_M365Audit.ps1 ---
