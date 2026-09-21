@@ -1,0 +1,11 @@
+﻿{
+  "TargetUPN": "cadm-jhaider@DOMAIN.onmicrosoft.com",
+  "AdditionalDomains": [
+    "DOMAIN.com",
+    "DOMAIN.at",
+    "DOMAIN.onmicrosoft.com"
+  ],
+  "ExportPath": ".\\TenantData",
+  "AdminCenterExportPath": ".\\TenantData\\AdminCenterExport",
+  "IncludeServerLicenses": true
+}

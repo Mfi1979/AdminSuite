@@ -1,0 +1,6 @@
+{
+  "CsvDelimiter": ";",
+  "DefaultEncoding": "UTF8",
+  "DateFormat": "yyyyMMdd",
+  "TimeFormat": "HH:mm:ss"
+}
