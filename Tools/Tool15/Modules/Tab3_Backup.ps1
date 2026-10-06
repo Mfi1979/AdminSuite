@@ -277,44 +277,69 @@ function Build-Tab3_Backup {
         }
     });
 
+# -------------------------------------------------------------------------
+    # Backup: Ausgewählte GPO sichern
+    # -------------------------------------------------------------------------
     $btnBackupSelected.Add_Click({
         if ($script:gridGpos.SelectedRows.Count -gt 0) {
-            $g =$script:gridGpos.SelectedRows[0];
-            $guid =$g.Cells["GPO ID (GUID)"].Value;
-            $name =$g.Cells["GPO Name"].Value;
-            $basePath =$script:txtBackupTargetDir.Text.Trim();
+            $selectedRow = $script:gridGpos.SelectedRows[0]
+            $targetGuid  = [string]$selectedRow.Cells["GPO ID (GUID)"].Value
+            $targetName  = [string]$selectedRow.Cells["GPO Name"].Value
+            $targetPath  = [string]$script:txtBackupTargetDir.Text.Trim()
+
+            if ([string]::IsNullOrWhiteSpace($targetPath)) {
+                [System.Windows.Forms.MessageBox]::Show("Bitte geben Sie einen gültigen Zielpfad an.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+                return
+            }
 
             try {
-                script:Backup-SingleGPOWithLog -Guid $guid -Name $name -BasePath$basePath;
-                [System.Windows.Forms.MessageBox]::Show("GPO '$name' erfolgreich gesichert!", "Backup erfolgreich", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information);
-            } catch {
-                if ($script:txtLog -and -not$script:txtLog.IsDisposed) {
-                    $script:txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [FEHLER] '$name':$_`r`n");
-                }
-                [System.Windows.Forms.MessageBox]::Show("Fehler beim Backup:`n$_", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error);
-            }
-        } else {
-            [System.Windows.Forms.MessageBox]::Show("Bitte waehlen Sie eine GPO aus der Tabelle aus.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning);
-        }
-    });
-
-    $script:btnBackupAll.Add_Click({
-        $items = @($script:gridGpos.DataSource);
-        if ($items.Count -eq 0) { return; }
-        $basePath = $script:txtBackupTargetDir.Text.Trim();
-        
-        foreach ($g in $items) {
-            try { 
-                script:Backup-SingleGPOWithLog -Guid $g."GPO ID (GUID)" -Name $g."GPO Name" -BasePath $basePath;
+                # Wichtig: Leerzeichen zwischen Parametername und Variable einhalten!
+                script:Backup-SingleGPOWithLog -Guid $targetGuid -Name $targetName -BasePath $targetPath
+                [System.Windows.Forms.MessageBox]::Show("GPO '$targetName' wurde erfolgreich gesichert!", "Backup abgeschlossen", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
             } catch {
                 if ($script:txtLog -and -not $script:txtLog.IsDisposed) {
-                    $script:txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [FEHLER] '$($g."GPO Name")': $_`r`n");
+                    $script:txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [FEHLER] '$targetName': $_`r`n")
+                }
+                [System.Windows.Forms.MessageBox]::Show("Fehler beim Backup:`n$_", "Fehler", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+            }
+        } else {
+            [System.Windows.Forms.MessageBox]::Show("Bitte wählen Sie zuerst eine GPO aus der Liste aus.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+        }
+    })
+
+    # -------------------------------------------------------------------------
+    # Backup: Alle / Gefilterte GPOs sichern
+    # -------------------------------------------------------------------------
+    $script:btnBackupAll.Add_Click({
+        $items = @($script:gridGpos.DataSource)
+        if ($null -eq $items -or $items.Count -eq 0) { return }
+
+        $targetPath = [string]$script:txtBackupTargetDir.Text.Trim()
+        if ([string]::IsNullOrWhiteSpace($targetPath)) {
+            [System.Windows.Forms.MessageBox]::Show("Bitte geben Sie einen gültigen Zielpfad an.", "Hinweis", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return
+        }
+
+        $successCount = 0$failCount = 0
+
+        foreach ($g in $items) {
+            $gGuid = [string]$g."GPO ID (GUID)"
+            $gName = [string]$g."GPO Name"
+            try { 
+                # Wichtig: Leerzeichen zwischen Parametername und Variable einhalten!
+                script:Backup-SingleGPOWithLog -Guid $gGuid -Name$gName -BasePath $targetPath$successCount++
+            } catch {
+                $failCount++
+                if ($script:txtLog -and -not$script:txtLog.IsDisposed) {
+                    $script:txtLog.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] [FEHLER] '$gName':$_`r`n")
                 }
             }
         }
-    });
 
-    $btnExportBackupCsv.Add_Click({
+        [System.Windows.Forms.MessageBox]::Show("Backup abgeschlossen.`nErfolgreich: $successCount`nFehlgeschlagen: $failCount", "Massen-Backup", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+    })
+		
+		$btnExportBackupCsv.Add_Click({
         $items = @($script:gridGpos.DataSource);
         if ($items.Count -eq 0) { return; }
         $targetDir = $script:txtBackupTargetDir.Text.Trim();
