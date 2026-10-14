@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-﻿# =========================================================================
-=======
 # =========================================================================
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 # Tool15_Launcher.ps1 - Active Directory GPO Enterprise Suite
 # =========================================================================
 
@@ -31,11 +27,7 @@ if ($isWebExecution) {
 }
 
 # -------------------------------------------------------------------------
-<<<<<<< HEAD
 # 2. Module herunterladen (falls nötig) & im Skript-Scope dot-sourcen
-=======
-# 2. Module herunterladen (falls nötig) & direkt im Skript-Scope dot-sourcen
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 # -------------------------------------------------------------------------
 $moduleList = @(
     "common.ps1",
@@ -51,10 +43,6 @@ $moduleList = @(
 foreach ($mod in $moduleList) {
     $targetFile = Join-Path $modulePath $mod
 
-<<<<<<< HEAD
-=======
-    # Wenn Datei lokal fehlt oder via Web/iex gestartet wurde -> von GitHub holen
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
     if ($isWebExecution -or (-not (Test-Path $targetFile))) {
         $rawUrl = "$gitHubBaseUrl/Modules/$mod"
         try {
@@ -114,32 +102,21 @@ function Enable-GridSorting {
 
     $Grid.Add_ColumnHeaderMouseClick({
         param($sender, $e)
-<<<<<<< HEAD
         
         $colIndex = $e.ColumnIndex
         if ($colIndex -lt 0 -or $colIndex -ge $sender.Columns.Count) { return }
         
         $propName = $sender.Columns[$colIndex].DataPropertyName
-=======
-        $column = $sender.Columns[$e.ColumnIndex]
-        $propName = $column.DataPropertyName
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
         if ([string]::IsNullOrWhiteSpace($propName)) { return }
 
         $dataSource = $sender.DataSource
         if ($null -eq $dataSource) { return }
 
-<<<<<<< HEAD
         $currentGlyph = $sender.Columns[$colIndex].HeaderCell.SortGlyphDirection
         $direction = if ($currentGlyph -eq [System.Windows.Forms.SortOrder]::Ascending) {
             [System.ComponentModel.ListSortDirection]::Descending
         } else {
             [System.ComponentModel.ListSortDirection]::Ascending
-=======
-        $direction = [System.ComponentModel.ListSortDirection]::Ascending
-        if ($column.HeaderCell.SortGlyphDirection -eq [System.Windows.Forms.SortOrder]::Ascending) {
-            $direction = [System.ComponentModel.ListSortDirection]::Descending
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
         }
 
         $list = [System.Collections.ArrayList]::new()
@@ -152,7 +129,6 @@ function Enable-GridSorting {
         foreach ($item in $sorted) { [void]$list.Add($item) }
         $sender.DataSource = $list
 
-<<<<<<< HEAD
         foreach ($c in $sender.Columns) {
             $c.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
         }
@@ -164,15 +140,6 @@ function Enable-GridSorting {
             } else {
                 [System.Windows.Forms.SortOrder]::Descending
             }
-=======
-        foreach ($col in $sender.Columns) {
-            $col.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]::None
-        }
-        $column.HeaderCell.SortGlyphDirection = if ($direction -eq [System.ComponentModel.ListSortDirection]::Ascending) {
-            [System.Windows.Forms.SortOrder]::Ascending
-        } else {
-            [System.Windows.Forms.SortOrder]::Descending
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
         }
     })
 }
@@ -181,22 +148,14 @@ function Enable-GridSorting {
 # 6. Hauptfenster initialisieren
 # -------------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
-<<<<<<< HEAD
-$form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - v1.9.8"
-=======
-$form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - v1.9.4"
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
+$form.Text = "Tool 15 - Active Directory GPO Enterprise Suite ($domainName) - v2.0.0"
 $form.Size = New-Object System.Drawing.Size(1280, 800)
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.MinimumSize = New-Object System.Drawing.Size(1024, 650)
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
 $form.BackColor = [System.Drawing.Color]::FromArgb(246, 248, 252)
 
-<<<<<<< HEAD
 # Statuszeile & Fortschrittsbalken
-=======
-# Statuszeile
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
 $statusStrip.Height = 28
 $statusStrip.BackColor = [System.Drawing.Color]::FromArgb(238, 242, 248)
@@ -207,11 +166,7 @@ $script:lblProgressInfo.Spring = $true
 $script:lblProgressInfo.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
 
 $script:pbarGlobal = New-Object System.Windows.Forms.ToolStripProgressBar
-<<<<<<< HEAD
 $script:pbarGlobal.Size = New-Object System.Drawing.Size(250, 18)
-=======
-$script:pbarGlobal.Size = New-Object System.Drawing.Size(200, 18)
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 $script:pbarGlobal.Visible = $false
 
 [void]$statusStrip.Items.Add($script:lblProgressInfo)
@@ -225,141 +180,99 @@ $tabControl.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing
 $form.Controls.Add($tabControl)
 
 # -------------------------------------------------------------------------
-<<<<<<< HEAD
-# 7. UI-Tabs aufbauen (NUR EINMAL)
-=======
 # 7. UI-Tabs aufbauen
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 # -------------------------------------------------------------------------
 Build-Tab0_Dashboard -tabControl $tabControl -domainDN $domainDN -domainName $domainName
 Build-Tab1_Overview  -tabControl $tabControl -domainDN $domainDN -domainName $domainName
-Build-Tab2_Settings  -tabControl $tabControl -domainDN $domainDN -domainName $domainName
-Build-Tab3_Backup    -tabControl $tabControl -domainDN $domainDN -domainName $domainName
+Build-Tab2_Settings  -tabControl $tabControl
+Build-Tab3_Backup    -tabControl $tabControl
 Build-Tab4_Compare   -tabControl $tabControl
 Build-Tab5_WmiFilter -tabControl $tabControl -domainDN $domainDN -domainName $domainName
 
 # -------------------------------------------------------------------------
-<<<<<<< HEAD
 # 8. Vollautomatischer Start-Load nach dem Anzeigen des Fensters
 # -------------------------------------------------------------------------
+function Set-ProgressSafe ([int]$pct, [string]$msg) {
+    if ($script:pbarGlobal) {
+        $script:pbarGlobal.Visible = $true
+        $script:pbarGlobal.Minimum = 0
+        $script:pbarGlobal.Maximum = 100
+        $script:pbarGlobal.Value = [Math]::Min(100, [Math]::Max(0, $pct))
+    }
+    if ($script:lblProgressInfo -and -not [string]::IsNullOrWhiteSpace($msg)) {
+        $script:lblProgressInfo.Text = $msg
+    }
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
 $form.Add_Shown({
-    # Handles aller Tabs erzwingen, damit WinForms Datenbindungen nicht verwirft
     foreach ($tab in $tabControl.TabPages) {
         $null = $tab.Handle
     }
 
     $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-    if ($script:pbarGlobal) {
-        $script:pbarGlobal.Visible = $true
-        $script:pbarGlobal.Minimum = 0
-        $script:pbarGlobal.Maximum = 100
-        $script:pbarGlobal.Value = 10
-    }
-    if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Lese GPOs der Domäne ein (Schritt 1/5)..." }
-    [System.Windows.Forms.Application]::DoEvents()
 
     try {
-        # 1. TAB 1: GPOs einlesen
+        # 1. TAB 1: GPOs via LDAP einlesen (befüllt $rawOverviewList und $allGposCache)
+        Set-ProgressSafe 10 "Lese GPOs der Domäne via LDAP ein (Schritt 1/6)..."
         if ($script:Invoke_LoadOverview -is [scriptblock]) {
             & $script:Invoke_LoadOverview
-        } elseif ($script:btnLoadAdGpos -and -not $script:btnLoadAdGpos.IsDisposed) {
-            $script:btnLoadAdGpos.PerformClick()
         }
 
-        # GPO-Namen sammeln
-        $gpoNames = @()
-        if ($script:rawOverviewList -and $script:rawOverviewList.Count -gt 0) {
-            $gpoNames = @($script:rawOverviewList | ForEach-Object { $_.'GPO Name' } | Sort-Object)
+        # 2. TAB 2 (Inspektor): GPO-Dropdown befüllen & erste GPO laden
+        Set-ProgressSafe 35 "Befülle Tab 2 (Inspektor) mit GPOs (Schritt 2/6)..."
+        if ($script:Update_SettingsGpoDropdown -is [scriptblock]) {
+            & $script:Update_SettingsGpoDropdown
+        }
+        if ($script:Invoke_LoadSettings -is [scriptblock]) {
+            & $script:Invoke_LoadSettings
         }
 
-        if ($script:pbarGlobal) {
-            $script:pbarGlobal.Minimum = 0
-            $script:pbarGlobal.Maximum = 100
-            $script:pbarGlobal.Value = 40
-        }
-        if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Synchronisiere Tab 2 (Inspektor)..." }
-        [System.Windows.Forms.Application]::DoEvents()
 
-        # 2. TAB 2 (Inspektor): Dropdown befüllen & 1. GPO laden
-        if ($script:comboInspectGpo -and -not $script:comboInspectGpo.IsDisposed) {
-            $script:comboInspectGpo.Items.Clear()
-            if ($gpoNames.Count -gt 0) {
-                [void]$script:comboInspectGpo.Items.AddRange($gpoNames)
-                $script:comboInspectGpo.SelectedIndex = 0
-                if ($script:Invoke_LoadInspectGpoSettings -is [scriptblock]) {
-                    & $script:Invoke_LoadInspectGpoSettings
-                }
+		# 3. TAB 3 (Backup): GPO-Bestand direkt laden
+        Set-ProgressSafe 55 "Befülle Tab 3 (Backup) mit GPOs (Schritt 3/6)..."
+        if ($script:Invoke_LoadGposBackup -is [scriptblock]) {
+            & $script:Invoke_LoadGposBackup
+        }	
+
+
+        # 4. TAB 4 (Diff): Dropdowns comboCompareGpo1 und comboCompareGpo2 füllen
+        Set-ProgressSafe 70 "Synchronisiere Tab 4 (Vergleich) (Schritt 4/6)..."
+        if ($script:comboCompareGpo1 -and -not $script:comboCompareGpo1.IsDisposed) {
+            $script:comboCompareGpo1.Items.Clear()
+            $script:comboCompareGpo2.Items.Clear()
+            [void]$script:comboCompareGpo2.Items.Add($script:DdpBaselineName)
+
+            foreach ($g in $script:allGposCache) {
+                [void]$script:comboCompareGpo1.Items.Add($g.DisplayName)
+                [void]$script:comboCompareGpo2.Items.Add($g.DisplayName)
             }
+            if ($script:comboCompareGpo1.Items.Count -gt 0) { $script:comboCompareGpo1.SelectedIndex = 0 }
+            if ($script:comboCompareGpo2.Items.Count -gt 0) { $script:comboCompareGpo2.SelectedIndex = 0 }
         }
 
-        if ($script:pbarGlobal) { $script:pbarGlobal.Value = 65 }
-        if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Bereite Tab 3 (Backup) und Tab 4 (Diff) vor..." }
-        [System.Windows.Forms.Application]::DoEvents()
-
-        # 3. TAB 3 (Backup): Tabelle / Dropdowns füllen
-        if ($script:Invoke_LoadBackupStatus -is [scriptblock]) {
-            & $script:Invoke_LoadBackupStatus
-        } elseif ($script:comboBackupGpo -and -not $script:comboBackupGpo.IsDisposed) {
-            $script:comboBackupGpo.Items.Clear()
-            [void]$script:comboBackupGpo.Items.Add("-- Alle GPOs sichern --")
-            if ($gpoNames.Count -gt 0) {
-                [void]$script:comboBackupGpo.Items.AddRange($gpoNames)
-            }
-            $script:comboBackupGpo.SelectedIndex = 0
+        # 5. TAB 5 (WMI-Filter): Filter-Analyse laden
+        Set-ProgressSafe 85 "Lese Tab 5 (WMI-Filter) ein (Schritt 5/6)..."
+        if ($script:Invoke_LoadWmiFilters -is [scriptblock]) {
+            & $script:Invoke_LoadWmiFilters
         }
 
-        # 4. TAB 4 (Diff): Dropdowns befüllen
-        if ($script:Update_CompareGpoDropdowns -is [scriptblock]) {
-            & $script:Update_CompareGpoDropdowns
-        } else {
-            if ($script:comboDiffGpo1 -and -not $script:comboDiffGpo1.IsDisposed -and $gpoNames.Count -gt 0) {
-                $script:comboDiffGpo1.Items.Clear()
-                [void]$script:comboDiffGpo1.Items.AddRange($gpoNames)
-                $script:comboDiffGpo1.SelectedIndex = 0
-            }
-            if ($script:comboDiffGpo2 -and -not $script:comboDiffGpo2.IsDisposed) {
-                $script:comboDiffGpo2.Items.Clear()
-                [void]$script:comboDiffGpo2.Items.Add("[Referenz] Microsoft Default Domain Policy (Standard-Werte)")
-                if ($gpoNames.Count -gt 0) {
-                    [void]$script:comboDiffGpo2.Items.AddRange($gpoNames)
-                }
-                $script:comboDiffGpo2.SelectedIndex = 0
-            }
-        }
-
-        if ($script:pbarGlobal) { $script:pbarGlobal.Value = 85 }
-        if ($script:lblProgressInfo) { $script:lblProgressInfo.Text = "Aktualisiere Dashboard & 4 System-Checks..." }
-        [System.Windows.Forms.Application]::DoEvents()
-
-        # 5. TAB 0 (Dashboard): KPIs & 4 Kern-Checks laden
+        # 6. TAB 0 (Dashboard): KPIs und die 4 System-Checks aktualisieren
+        Set-ProgressSafe 95 "Aktualisiere Dashboard & System-Checks (Schritt 6/6)..."
         if ($script:Invoke_LoadDashboard -is [scriptblock]) {
             & $script:Invoke_LoadDashboard
         }
 
-        if ($script:pbarGlobal) {
-            $script:pbarGlobal.Value = 100
-            $script:pbarGlobal.Visible = $false
-        }
-        $count = if ($script:rawOverviewList) { $script:rawOverviewList.Count } else { 0 }
-        if ($script:lblProgressInfo) {
-            $script:lblProgressInfo.Text = "Bereit. $count GPOs erfolgreich geladen."
-        }
+        Set-ProgressSafe 100 "Bereit. $($script:rawOverviewList.Count) GPOs auf allen Tabs geladen."
     } catch {
         if ($script:lblProgressInfo) {
-            $script:lblProgressInfo.Text = "Fehler: $($_.Exception.Message)"
+            $script:lblProgressInfo.Text = "Fehler beim Start-Laden: $($_.Exception.Message)"
         }
     } finally {
         if ($script:pbarGlobal) { $script:pbarGlobal.Visible = $false }
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
     }
 })
-=======
-# 8. Dashboard initial laden
-# -------------------------------------------------------------------------
-if ($script:Invoke_LoadDashboard -is [scriptblock]) {
-    & $script:Invoke_LoadDashboard
-}
->>>>>>> de3c845dae6dc519ed2a353684faf778318607ae
 
 # -------------------------------------------------------------------------
 # 9. Schliess- & Bereinigungslogik
