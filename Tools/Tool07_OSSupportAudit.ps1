@@ -9,7 +9,7 @@ function Analyze-OSSupportDetails {
         [string]$OSName,
         [string]$OSVersion,
         [string]$OSServicePack,
-        [int]$NearEolMonths = 12
+        [int]$NearEolMonths = 3
     )
 
     $status        = "Supported"
