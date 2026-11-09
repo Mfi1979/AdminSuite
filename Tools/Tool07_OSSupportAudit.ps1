@@ -268,7 +268,7 @@ function Open-ToolOSSupportAudit {
     $numNearMonths.Location = "985, 12"; $numNearMonths.Size = "60, 23"
     $numNearMonths.Minimum = 1
     $numNearMonths.Maximum = 60
-    $numNearMonths.Value = 12
+    $numNearMonths.Value = 3
     $pnlTop.Controls.Add($numNearMonths)
 
     # 7. Checkbox Sortieren
